@@ -1,0 +1,12 @@
+{
+    "display_name": "Menu Organizer",
+    "version": "1.0.0",
+    "author": "Zealllll",
+    "description": "จัดเรียง ซ่อน/แสดง และย้ายบล็อกตั้งค่าของแต่ละ extension ในหน้า Extensions (ไอคอนลูกบาศก์) ได้ตามใจ ด้วยการลากวางข้ามคอลัมน์ พร้อมบันทึกค่าอัตโนมัติ",
+    "js": "index.js",
+    "css": "style.css",
+    "loading_order": 200,
+    "requires": [],
+    "optional": [],
+    "minimum_client_version": "0.0.0"
+}
