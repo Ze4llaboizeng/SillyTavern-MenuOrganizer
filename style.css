@@ -142,8 +142,67 @@
     overflow-y: auto;
 }
 
-@media (max-width: 600px) {
+/* ป้ายบอกโปรไฟล์ที่กำลังตั้งค่า (คอม/มือถือ จำแยกกัน) */
+.mo-profile-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background-color: var(--white20a, rgba(255, 255, 255, 0.08));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+    font-size: 0.85em;
+    line-height: 1.4;
+}
+
+.mo-profile-badge .fa-solid {
+    opacity: 0.9;
+}
+
+/* แถวที่ล็อกซ่อนไม่ได้ (บล็อกของ Menu Organizer เอง) */
+.mo-row.mo-row-locked .mo-toggle {
+    cursor: default;
+    opacity: 0.5;
+}
+
+.mo-row.mo-row-locked .mo-toggle:hover {
+    background-color: transparent;
+    opacity: 0.5;
+}
+
+/* จอมือถือ: คอลัมน์เรียงลง + เป้าแตะใหญ่ขึ้นให้กดด้วยนิ้วง่าย */
+@media (max-width: 768px) {
     .mo-columns {
         flex-direction: column;
+    }
+
+    .mo-editor {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .mo-list {
+        max-height: 42vh;
+    }
+
+    .mo-row {
+        padding: 12px 12px;
+        gap: 12px;
+    }
+
+    .mo-handle {
+        padding: 8px 10px;
+        font-size: 1.15em;
+        /* กันหน้าเลื่อนตอนเริ่มลากด้วยนิ้ว */
+        touch-action: none;
+    }
+
+    .mo-toggle {
+        padding: 8px 12px;
+        font-size: 1.1em;
+    }
+
+    .mo-sortable-placeholder {
+        height: 48px;
     }
 }
