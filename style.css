@@ -1,4 +1,4 @@
-/* Menu Organizer styles */
+/* Menu Organizer styles — light idle cost, touch + desktop friendly */
 
 .mo-desc {
     opacity: 0.8;
@@ -48,9 +48,13 @@
     min-height: 60px;
     max-height: 55vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     padding: 6px;
     border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
     border-radius: 8px;
+    /* เลื่อน smooth เฉพาะเครื่องที่ไหว */
+    scroll-behavior: auto;
 }
 
 .mo-row {
@@ -60,7 +64,11 @@
     padding: 8px 10px;
     border-radius: 6px;
     background-color: var(--black30a, rgba(0, 0, 0, 0.2));
-    transition: background-color 0.15s ease, opacity 0.15s ease;
+    /* transition เบา — ปิดตอน reduced-motion */
+    transition: background-color 0.12s ease, opacity 0.12s ease;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .mo-row:hover {
@@ -79,6 +87,8 @@
     cursor: grab;
     opacity: 0.7;
     padding: 2px 4px;
+    touch-action: none;
+    flex-shrink: 0;
 }
 
 .mo-handle:active {
@@ -89,10 +99,13 @@
     width: 20px;
     text-align: center;
     opacity: 0.9;
+    flex-shrink: 0;
+    pointer-events: none;
 }
 
 .mo-label {
     flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -103,6 +116,8 @@
     padding: 4px 6px;
     border-radius: 4px;
     opacity: 0.8;
+    flex-shrink: 0;
+    touch-action: manipulation;
 }
 
 .mo-toggle:hover {
@@ -140,6 +155,7 @@
     border-radius: 10px;
     max-height: 85vh;
     overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 /* ป้ายบอกโปรไฟล์ที่กำลังตั้งค่า (คอม/มือถือ จำแยกกัน) */
@@ -159,7 +175,7 @@
     opacity: 0.9;
 }
 
-/* แถวที่ล็อกซ่อนไม่ได้ (บล็อกของ Menu Organizer เอง) */
+/* แถวที่ล็อกซ่อนไม่ได้ */
 .mo-row.mo-row-locked .mo-toggle {
     cursor: default;
     opacity: 0.5;
@@ -170,7 +186,17 @@
     opacity: 0.5;
 }
 
-/* จอมือถือ: คอลัมน์เรียงลง + เป้าแตะใหญ่ขึ้นให้กดด้วยนิ้วง่าย */
+/* ประหยัดพลังงาน: ปิด transition / hover หนักเมื่อ user ขอ reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .mo-row {
+        transition: none;
+    }
+    .mo-list {
+        scroll-behavior: auto;
+    }
+}
+
+/* จอมือถือ: คอลัมน์เรียงลง + เป้าแตะใหญ่ */
 @media (max-width: 768px) {
     .mo-columns {
         flex-direction: column;
@@ -182,27 +208,76 @@
     }
 
     .mo-list {
-        max-height: 42vh;
+        max-height: 38vh;
+        /* มือถือ: เลื่อน list เอง ไม่ดึงทั้งหน้า */
+        overscroll-behavior-y: contain;
     }
 
     .mo-row {
         padding: 12px 12px;
         gap: 12px;
+        min-height: 44px; /* เป้าแตะขั้นต่ำ */
     }
 
     .mo-handle {
-        padding: 8px 10px;
+        padding: 10px 12px;
         font-size: 1.15em;
-        /* กันหน้าเลื่อนตอนเริ่มลากด้วยนิ้ว */
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         touch-action: none;
     }
 
     .mo-toggle {
-        padding: 8px 12px;
+        padding: 10px 12px;
         font-size: 1.1em;
+        min-width: 44px;
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .mo-sortable-placeholder {
         height: 48px;
+    }
+
+    .mo-profile-badge {
+        font-size: 0.82em;
+        padding: 10px;
+    }
+
+    .mo-reset {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+    }
+}
+
+/* จอแคบมาก */
+@media (max-width: 380px) {
+    .mo-list {
+        max-height: 34vh;
+        padding: 4px;
+    }
+    .mo-row {
+        gap: 8px;
+        padding: 10px;
+    }
+    .mo-label {
+        font-size: 0.95em;
+    }
+}
+
+/* PC กว้าง: hover ชัด + list สูงขึ้นนิด */
+@media (min-width: 769px) {
+    .mo-list {
+        max-height: 58vh;
+    }
+    .mo-handle {
+        /* เมาส์: ลากง่าย ไม่ต้องเป้าใหญ่ */
+        padding: 4px 6px;
     }
 }

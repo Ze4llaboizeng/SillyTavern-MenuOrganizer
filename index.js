@@ -1,7 +1,6 @@
 /* Menu Organizer for SillyTavern
- * ให้ผู้ใช้ลากจัดเรียง + ซ่อน/แสดง บล็อกตั้งค่าของแต่ละ extension
- * ในหน้า Extensions settings (drawer ไอคอน fa-cubes) ได้เอง ลากข้ามคอลัมน์ได้
- * บันทึกค่าอัตโนมัติ และคงลำดับไว้แม้ extension อื่นจะเพิ่มบล็อกมาทีหลัง
+ * จัดเรียง + ซ่อน/แสดง บล็อกตั้งค่า extension ในหน้า Extensions (fa-cubes)
+ * ลากข้ามคอลัมน์ได้ · โปรไฟล์คอม/มือถือแยกกัน · ประหยัดงาน idle
  */
 (() => {
     if (window.__MENU_ORGANIZER_LOADED__) return;
@@ -10,22 +9,27 @@
     const MODULE_NAME = 'menuOrganizer';
     const KEY_ATTR = 'data-mo-key';
     const OWN_ID = 'menu-organizer-settings';
-    const OWN_KEY = `id:${OWN_ID}`;
-    // เกณฑ์จอมือถือ (ตรงกับ breakpoint ของ SillyTavern เอง)
     const MOBILE_MEDIA = '(max-width: 768px)';
-    // สองคอลัมน์ในหน้า Extensions settings
     const COLS = [
         { id: 'extensions_settings', label: 'คอลัมน์ซ้าย' },
         { id: 'extensions_settings2', label: 'คอลัมน์ขวา' },
     ];
 
-    // จอมือถือ/แนวตั้งแคบ vs จอคอม -> จำ layout แยกโปรไฟล์กัน
+    // debounce: idle ยาวขึ้น / ตอนมี editor เปิด ตอบสนองเร็วขึ้น
+    const REAPPLY_MS_IDLE = 280;
+    const REAPPLY_MS_ACTIVE = 80;
+    const BOOT_POLL_MS = 400;
+    const BOOT_POLL_MAX = 60; // ~24s แล้วหยุด — ไม่ poll ตลอดชีพ
+
     function currentProfile() {
         try { return window.matchMedia(MOBILE_MEDIA).matches ? 'mobile' : 'desktop'; }
         catch (_) { return (window.innerWidth || 9999) <= 768 ? 'mobile' : 'desktop'; }
     }
     function profileLabel(p) {
         return p === 'mobile' ? 'มือถือ (จอแคบ)' : 'คอมพิวเตอร์ (จอกว้าง)';
+    }
+    function isPageVisible() {
+        return document.visibilityState !== 'hidden';
     }
 
     // ------------------------------------------------------------------
@@ -35,7 +39,6 @@
         getContext() {
             try { return window.SillyTavern?.getContext?.() || null; } catch (_) { return null; }
         },
-        // root store ของ extension (มีทั้งสองโปรไฟล์) + migrate schema เก่า
         get root() {
             const ctx = this.getContext();
             if (!ctx) return null;
@@ -44,16 +47,17 @@
             const s = store[MODULE_NAME];
             if (!s.profiles || typeof s.profiles !== 'object') {
                 s.profiles = {};
-                // ของเดิม (schema แบน) ย้ายเข้าโปรไฟล์ desktop
                 if (s.layout || s.hidden) {
-                    s.profiles.desktop = { layout: s.layout || {}, hidden: Array.isArray(s.hidden) ? s.hidden : [] };
+                    s.profiles.desktop = {
+                        layout: s.layout || {},
+                        hidden: Array.isArray(s.hidden) ? s.hidden : [],
+                    };
                 }
             }
             delete s.layout;
             delete s.hidden;
             return s;
         },
-        // settings ของโปรไฟล์ที่ระบุ (ค่าปริยาย = โปรไฟล์ปัจจุบันตามขนาดจอ)
         profile(name) {
             const root = this.root;
             if (!root) return null;
@@ -89,11 +93,10 @@
         for (const c of COLS) {
             const col = document.getElementById(c.id);
             if (!col) continue;
-            [...col.children].forEach(child => {
+            for (const child of col.children) {
                 let key = child.getAttribute(KEY_ATTR);
                 if (!key) {
                     key = getItemKey(child);
-                    // กัน key ชนกัน (บล็อกไม่มี id ที่ขึ้นต้นข้อความเหมือนกัน) -> ต่อ suffix
                     if (seen.has(key)) {
                         let n = 2;
                         while (seen.has(`${key}#${n}`)) n++;
@@ -102,17 +105,15 @@
                     child.setAttribute(KEY_ATTR, key);
                 }
                 seen.add(key);
-            });
+            }
         }
     }
 
-    // บล็อกที่ยังว่าง (extension ยังไม่ populate) ไม่ต้องเอามาแสดงในตัวจัดเรียง
     function isRenderable(el) {
         if (el.id === OWN_ID) return true;
         return el.children.length > 0 || (el.textContent || '').trim() !== '';
     }
 
-    // บล็อกของ Menu Organizer เอง ห้ามซ่อน (กันผู้ใช้ล็อกตัวเองออกจนเปิดกลับไม่ได้)
     function isLockedFromHide(el) {
         return el.id === OWN_ID;
     }
@@ -121,22 +122,28 @@
         const header = el.querySelector('.inline-drawer-header b, .inline-drawer-toggle b, h3, h4');
         const text = (header?.textContent || '').trim().replace(/\s+/g, ' ');
         if (text) return text.slice(0, 48);
-        if (el.id) return el.id.replace(/_container$/, '').replace(/-settings$/, '').replace(/[_-]/g, ' ').trim();
+        if (el.id) {
+            return el.id
+                .replace(/_container$/, '')
+                .replace(/-settings$/, '')
+                .replace(/[_-]/g, ' ')
+                .trim();
+        }
         return '(ไม่มีชื่อ)';
     }
 
     function getIconClass(el) {
-        const icon = el.querySelector('.inline-drawer-header [class*="fa-"], .inline-drawer-toggle [class*="fa-"], b [class*="fa-"]');
+        const icon = el.querySelector(
+            '.inline-drawer-header [class*="fa-"], .inline-drawer-toggle [class*="fa-"], b [class*="fa-"]',
+        );
         if (!icon) return 'fa-solid fa-puzzle-piece';
         const cls = [...icon.classList].filter(c => c.startsWith('fa-'));
         return cls.length ? cls.join(' ') : 'fa-solid fa-puzzle-piece';
     }
 
     // ------------------------------------------------------------------
-    // Apply saved layout + visibility to the real DOM
+    // Apply layout (minimal DOM writes)
     // ------------------------------------------------------------------
-    // ย้าย node ไปเป็นลูกลำดับที่ idx ของ parent เฉพาะเมื่อยังไม่อยู่ตำแหน่งนั้น
-    // (กัน DOM write ที่ไม่จำเป็น = ลด reflow + ลด mutation record)
     function placeAt(parent, node, idx) {
         const ref = parent.children[idx] || null;
         if (node.parentNode === parent && node.nextSibling === ref) return false;
@@ -145,95 +152,174 @@
         return true;
     }
 
+    let applyQueued = false;
     function applyLayout() {
         const settings = Core.settings;
         if (!settings) return;
         const cols = COLS.map(c => document.getElementById(c.id));
         if (cols.some(c => !c)) return;
 
-        // หยุดฟัง mutation ระหว่างเราเขียน DOM เอง แล้วค่อยต่อกลับตอนจบ
-        // (แฟล็กอย่างเดียวกันลูปไม่ได้ เพราะ observer callback เป็น async microtask)
+        // หยุด observer ชั่วคราวตอนเขียน DOM เอง
+        const wasWatching = observers.length > 0;
         stopObserver();
         try {
             ensureKeys();
 
-            // รวมทุก item ปัจจุบันจากทั้งสองคอลัมน์ ทำ map ตาม key
             const byKey = new Map();
-            cols.forEach(col => [...col.children].forEach(ch => byKey.set(ch.getAttribute(KEY_ATTR), ch)));
+            for (const col of cols) {
+                for (const ch of col.children) byKey.set(ch.getAttribute(KEY_ATTR), ch);
+            }
 
-            // ลำดับเป้าหมายของแต่ละคอลัมน์: ตามที่บันทึกไว้ก่อน แล้วต่อท้ายด้วย item ใหม่
             const placed = new Set();
             COLS.forEach((c, i) => {
                 const col = cols[i];
                 let idx = 0;
                 for (const key of settings.layout[c.id]) {
                     const el = byKey.get(key);
-                    if (el && !placed.has(key)) { placeAt(col, el, idx++); placed.add(key); }
+                    if (el && !placed.has(key)) {
+                        placeAt(col, el, idx++);
+                        placed.add(key);
+                    }
                 }
-                // item ใหม่ที่ยังไม่เคยบันทึก คงไว้ที่คอลัมน์เดิม (ต่อท้าย ตามลำดับที่มันอยู่)
-                [...col.children].forEach(ch => {
+                // item ใหม่: ต่อท้ายคอลัมน์เดิมตามลำดับปัจจุบัน
+                for (const ch of [...col.children]) {
                     const key = ch.getAttribute(KEY_ATTR);
-                    if (!placed.has(key)) { placeAt(col, ch, idx++); placed.add(key); }
-                });
+                    if (!placed.has(key)) {
+                        placeAt(col, ch, idx++);
+                        placed.add(key);
+                    }
+                }
             });
 
-            // ซ่อน/แสดง (แตะเฉพาะตัวที่เราคุม และไม่แตะบล็อกที่ล็อกไว้)
             const hidden = new Set(settings.hidden);
             byKey.forEach((el, key) => {
                 if (hidden.has(key) && !isLockedFromHide(el)) {
-                    el.dataset.moHidden = '1';
-                    el.style.setProperty('display', 'none', 'important');
+                    if (el.dataset.moHidden !== '1') {
+                        el.dataset.moHidden = '1';
+                        el.style.setProperty('display', 'none', 'important');
+                    }
                 } else if (el.dataset.moHidden === '1') {
                     delete el.dataset.moHidden;
                     el.style.removeProperty('display');
                 }
             });
         } finally {
-            startObserver();
+            if (wasWatching && shouldObserve()) startObserver();
         }
     }
 
-    // ------------------------------------------------------------------
-    // Observer: extension อื่น populate บล็อกทีหลัง -> re-apply
-    // ------------------------------------------------------------------
-    let observers = [], reapplyTimer = null;
-    function scheduleReapply() {
-        clearTimeout(reapplyTimer);
-        reapplyTimer = setTimeout(applyLayout, 150);
+    /** จัดคิว apply ผ่าน rAF — รวมหลาย schedule ในเฟรมเดียว */
+    function queueApplyLayout() {
+        if (applyQueued) return;
+        applyQueued = true;
+        requestAnimationFrame(() => {
+            applyQueued = false;
+            if (!isPageVisible()) {
+                // หน้าซ่อน: เลื่อนไปทำตอนกลับมาโชว์
+                pendingApplyWhenVisible = true;
+                return;
+            }
+            applyLayout();
+        });
     }
+
+    let pendingApplyWhenVisible = false;
+
+    // ------------------------------------------------------------------
+    // Observer — ทำงานเฉพาะเมื่อหน้ามองเห็น + คอลัมน์ยังอยู่ในเอกสาร
+    // ------------------------------------------------------------------
+    let observers = [];
+    let reapplyTimer = null;
+    let editorOpen = false;
+
+    function shouldObserve() {
+        return isPageVisible() && COLS.every(c => document.getElementById(c.id));
+    }
+
+    function scheduleReapply() {
+        if (!isPageVisible()) {
+            pendingApplyWhenVisible = true;
+            return;
+        }
+        clearTimeout(reapplyTimer);
+        const ms = editorOpen ? REAPPLY_MS_ACTIVE : REAPPLY_MS_IDLE;
+        reapplyTimer = setTimeout(queueApplyLayout, ms);
+    }
+
     function stopObserver() {
-        observers.forEach(o => o.disconnect());
+        if (!observers.length) return;
+        for (const o of observers) o.disconnect();
         observers = [];
     }
+
     function startObserver() {
+        if (!shouldObserve()) return;
+        // ถ้า observe อยู่แล้วและ target เดิม — ไม่ recreate
+        if (observers.length === COLS.length) {
+            let same = true;
+            for (let i = 0; i < COLS.length; i++) {
+                const col = document.getElementById(COLS[i].id);
+                if (!col || observers[i].__moTarget !== col) { same = false; break; }
+            }
+            if (same) return;
+        }
         stopObserver();
         for (const c of COLS) {
             const col = document.getElementById(c.id);
             if (!col) continue;
             const obs = new MutationObserver(muts => {
-                if (muts.some(m => m.addedNodes.length || m.removedNodes.length)) scheduleReapply();
+                // สนใจเฉพาะ childList ที่มี node เข้า/ออกจริง
+                for (const m of muts) {
+                    if (m.addedNodes.length || m.removedNodes.length) {
+                        scheduleReapply();
+                        return;
+                    }
+                }
             });
             obs.observe(col, { childList: true });
+            obs.__moTarget = col;
             observers.push(obs);
         }
     }
 
-    // สลับโปรไฟล์เมื่อขนาดจอข้าม breakpoint (คอม <-> มือถือ) แล้ว re-apply layout ของโปรไฟล์นั้น
+    function onVisibilityChange() {
+        if (isPageVisible()) {
+            if (pendingApplyWhenVisible) {
+                pendingApplyWhenVisible = false;
+                queueApplyLayout();
+            }
+            startObserver();
+        } else {
+            // แท็บ/แอปถูกซ่อน: ตัด observer ลด wake-up + เคลียร์ timer
+            clearTimeout(reapplyTimer);
+            reapplyTimer = null;
+            stopObserver();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Profile switch (desktop <-> mobile)
+    // ------------------------------------------------------------------
     let lastProfile = null;
+    let mq = null;
+    let mqHandler = null;
+
     function watchProfile() {
         lastProfile = currentProfile();
         const onChange = () => {
             const now = currentProfile();
             if (now === lastProfile) return;
             lastProfile = now;
-            applyLayout();
+            queueApplyLayout();
         };
         try {
-            const mq = window.matchMedia(MOBILE_MEDIA);
+            mq = window.matchMedia(MOBILE_MEDIA);
+            mqHandler = onChange;
             if (mq.addEventListener) mq.addEventListener('change', onChange);
             else if (mq.addListener) mq.addListener(onChange);
         } catch (_) {
-            window.addEventListener('resize', onChange);
+            // fallback เบา: ใช้ matchMedia ไม่ได้ค่อย resize (debounced ผ่าน schedule)
+            window.addEventListener('resize', () => scheduleReapply(), { passive: true });
         }
     }
 
@@ -246,45 +332,65 @@
         const isHidden = !locked && hiddenSet.has(key);
         const row = $(`
             <div class="mo-row ${isHidden ? 'mo-row-hidden' : ''} ${locked ? 'mo-row-locked' : ''}">
-                <div class="mo-handle fa-solid fa-grip-vertical" title="ลากเพื่อจัดเรียง / ย้ายคอลัมน์"></div>
-                <div class="mo-icon"></div>
+                <div class="mo-handle fa-solid fa-grip-vertical" title="ลากเพื่อจัดเรียง / ย้ายคอลัมน์" aria-label="ลากจัดเรียง"></div>
+                <div class="mo-icon" aria-hidden="true"></div>
                 <div class="mo-label"></div>
-                <div class="mo-toggle fa-solid ${locked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : 'fa-eye')}" title="${locked ? 'บล็อกนี้ซ่อนไม่ได้ (กันเปิดกลับไม่ได้)' : 'ซ่อน/แสดง'}"></div>
+                <div class="mo-toggle fa-solid ${locked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : 'fa-eye')}"
+                     title="${locked ? 'บล็อกนี้ซ่อนไม่ได้ (กันเปิดกลับไม่ได้)' : 'ซ่อน/แสดง'}"
+                     role="button" tabindex="0"
+                     aria-label="${locked ? 'ซ่อนไม่ได้' : 'สลับซ่อน/แสดง'}"></div>
             </div>`);
         row.attr('data-key', key);
         if (locked) row.attr('data-locked', '1');
         row.find('.mo-icon').addClass(getIconClass(el));
         row.find('.mo-label').text(getLabel(el));
         if (!locked) {
-            row.find('.mo-toggle').on('click', function () {
+            const toggle = () => {
                 const nowHidden = row.toggleClass('mo-row-hidden').hasClass('mo-row-hidden');
-                $(this).toggleClass('fa-eye', !nowHidden).toggleClass('fa-eye-slash', nowHidden);
+                row.find('.mo-toggle')
+                    .toggleClass('fa-eye', !nowHidden)
+                    .toggleClass('fa-eye-slash', nowHidden);
                 persist();
-            });
+            };
+            row.find('.mo-toggle')
+                .on('click', toggle)
+                .on('keydown', e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggle();
+                    }
+                });
         }
         return row;
     }
 
     function buildEditor() {
         const cols = COLS.map(c => document.getElementById(c.id));
-        if (cols.some(c => !c)) return { wrapper: $('<div>เปิดหน้า Extensions ก่อน แล้วลองใหม่</div>'), lists: [] };
+        if (cols.some(c => !c)) {
+            return { wrapper: $('<div>เปิดหน้า Extensions ก่อน แล้วลองใหม่</div>'), lists: [] };
+        }
 
         ensureKeys();
         applyLayout();
         const settings = Core.settings;
         const hiddenSet = new Set(settings.hidden);
-
         const lists = [];
         const persist = () => persistEditor(lists, settings);
         const columns = $('<div class="mo-columns"></div>');
+        const mobile = currentProfile() === 'mobile';
 
         COLS.forEach((c, i) => {
-            const colWrap = $(`<div class="mo-col"><div class="mo-col-title"></div></div>`);
-            colWrap.find('.mo-col-title').text(c.label);
+            const colWrap = $('<div class="mo-col"><div class="mo-col-title"></div></div>');
+            // มือถือ: เรียกคอลัมน์ว่า "กลุ่มบน/ล่าง" ชัดกว่าซ้าย/ขวา
+            colWrap.find('.mo-col-title').text(
+                mobile
+                    ? (i === 0 ? 'กลุ่มบน (คอลัมน์ซ้าย)' : 'กลุ่มล่าง (คอลัมน์ขวา)')
+                    : c.label,
+            );
             const list = $('<div class="mo-list mo-connected"></div>').attr('data-col', c.id);
-            [...cols[i].children]
-                .filter(isRenderable)
-                .forEach(el => list.append(makeRow(el, hiddenSet, persist)));
+            for (const el of cols[i].children) {
+                if (isRenderable(el)) list.append(makeRow(el, hiddenSet, persist));
+            }
             colWrap.append(list);
             columns.append(colWrap);
             lists.push(list);
@@ -292,28 +398,44 @@
 
         const wrapper = $('<div class="mo-editor"></div>');
         const badge = $('<div class="mo-profile-badge"><span class="fa-solid"></span> <span class="mo-profile-text"></span></div>');
-        badge.find('.fa-solid').addClass(currentProfile() === 'mobile' ? 'fa-mobile-screen-button' : 'fa-desktop');
-        badge.find('.mo-profile-text').text('กำลังตั้งค่าสำหรับ: ' + profileLabel(currentProfile()) + ' (คอมกับมือถือจำแยกกัน)');
+        badge.find('.fa-solid').addClass(mobile ? 'fa-mobile-screen-button' : 'fa-desktop');
+        badge.find('.mo-profile-text').text(
+            'กำลังตั้งค่าสำหรับ: ' + profileLabel(currentProfile()) + ' (คอมกับมือถือจำแยกกัน)',
+        );
         wrapper.append(badge);
-        wrapper.append('<div class="mo-editor-hint">ลากด้วย <span class="fa-solid fa-grip-vertical"></span> เพื่อจัดเรียงหรือย้ายข้ามคอลัมน์ กด <span class="fa-solid fa-eye"></span> เพื่อซ่อน/แสดง บันทึกอัตโนมัติ</div>');
+        wrapper.append(
+            '<div class="mo-editor-hint">'
+            + (mobile
+                ? 'กดค้างที่ <span class="fa-solid fa-grip-vertical"></span> แล้วลากเพื่อจัดเรียง · แตะตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ'
+                : 'ลากด้วย <span class="fa-solid fa-grip-vertical"></span> เพื่อจัดเรียงหรือย้ายข้ามคอลัมน์ · กดตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ')
+            + '</div>',
+        );
         wrapper.append(columns);
 
-        const resetBtn = $('<div class="menu_button mo-reset"><span class="fa-solid fa-rotate-left"></span> คืนค่าเริ่มต้น</div>');
-        resetBtn.on('click', () => {
+        const resetBtn = $('<div class="menu_button mo-reset" role="button" tabindex="0"><span class="fa-solid fa-rotate-left"></span> คืนค่าเริ่มต้น</div>');
+        const doReset = () => {
             const s = Core.settings;
             for (const c of COLS) s.layout[c.id] = [];
             s.hidden = [];
             Core.save();
-            COLS.forEach(c => {
+            for (const c of COLS) {
                 const col = document.getElementById(c.id);
-                if (col) [...col.children].forEach(el => {
-                    if (el.dataset.moHidden === '1') { delete el.dataset.moHidden; el.style.removeProperty('display'); }
-                });
-            });
+                if (!col) continue;
+                for (const el of col.children) {
+                    if (el.dataset.moHidden === '1') {
+                        delete el.dataset.moHidden;
+                        el.style.removeProperty('display');
+                    }
+                }
+            }
             lists.forEach(l => {
                 l.find('.mo-row-hidden').removeClass('mo-row-hidden');
                 l.find('.mo-row:not(.mo-row-locked) .mo-toggle').removeClass('fa-eye-slash').addClass('fa-eye');
             });
+        };
+        resetBtn.on('click', doReset);
+        resetBtn.on('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doReset(); }
         });
         wrapper.append(resetBtn);
 
@@ -325,9 +447,9 @@
         lists.forEach((list, i) => {
             const order = [];
             list.find('.mo-row').each(function () {
-                const key = $(this).attr('data-key');
+                const key = this.getAttribute('data-key');
                 order.push(key);
-                if ($(this).hasClass('mo-row-hidden')) hidden.push(key);
+                if (this.classList.contains('mo-row-hidden')) hidden.push(key);
             });
             settings.layout[COLS[i].id] = order;
         });
@@ -336,36 +458,79 @@
         applyLayout();
     }
 
+    function destroySortables(lists) {
+        if (!$.fn.sortable || !lists?.length) return;
+        lists.forEach(list => {
+            try {
+                if (list.data('ui-sortable')) list.sortable('destroy');
+            } catch (_) { /* already gone */ }
+        });
+    }
+
     async function openEditor() {
         const ctx = Core.getContext();
         const { wrapper, lists, persist } = buildEditor();
+        editorOpen = true;
 
-        if (ctx?.callGenericPopup && ctx?.POPUP_TYPE) {
-            ctx.callGenericPopup(wrapper, ctx.POPUP_TYPE.TEXT, '', { wide: true, large: true, okButton: 'เสร็จสิ้น' });
-        } else {
-            const overlay = $('<div class="mo-overlay"></div>').append(wrapper);
-            $('body').append(overlay);
-            overlay.on('click', e => { if (e.target === overlay[0]) overlay.remove(); });
-        }
-
-        // ลากข้ามคอลัมน์ jQuery UI ยิง update 2 ครั้ง (ต้นทาง+ปลายทาง) -> debounce กัน persist ซ้ำ
+        // ลากข้ามคอลัมน์ jQuery UI ยิง update 2 ครั้ง -> debounce
         let persistTimer = null;
+        let cleaned = false;
         const persistSoon = () => {
             clearTimeout(persistTimer);
             persistTimer = setTimeout(() => persist && persist(), 60);
         };
+        const cleanup = () => {
+            if (cleaned) return;
+            cleaned = true;
+            editorOpen = false;
+            clearTimeout(persistTimer);
+            destroySortables(lists);
+        };
+
+        const mobile = currentProfile() === 'mobile';
+        // มือถือ: delay ก่อนเริ่มลาก กันชน scroll; คอม: ลากทันที
+        const sortableOpts = {
+            handle: '.mo-handle',
+            connectWith: '.mo-connected',
+            tolerance: 'pointer',
+            placeholder: 'mo-sortable-placeholder',
+            forcePlaceholderSize: true,
+            scroll: true,
+            scrollSensitivity: mobile ? 48 : 30,
+            scrollSpeed: mobile ? 12 : 10,
+            delay: mobile ? 160 : 0,
+            distance: mobile ? 0 : 3,
+            helper: 'original',
+            update: persistSoon,
+        };
+
         setTimeout(() => {
-            if ($.fn.sortable && lists.length) {
-                lists.forEach(list => list.sortable({
-                    handle: '.mo-handle',
-                    connectWith: '.mo-connected',
-                    tolerance: 'pointer',
-                    placeholder: 'mo-sortable-placeholder',
-                    forcePlaceholderSize: true,
-                    update: persistSoon,
-                }));
+            if (cleaned || !$.fn.sortable || !lists.length) return;
+            lists.forEach(list => list.sortable(sortableOpts));
+        }, 40);
+
+        try {
+            if (ctx?.callGenericPopup && ctx?.POPUP_TYPE) {
+                await ctx.callGenericPopup(
+                    wrapper,
+                    ctx.POPUP_TYPE.TEXT,
+                    '',
+                    { wide: true, large: true, okButton: 'เสร็จสิ้น' },
+                );
+            } else {
+                const overlay = $('<div class="mo-overlay"></div>').append(wrapper);
+                $('body').append(overlay);
+                await new Promise(resolve => {
+                    overlay.on('click', e => {
+                        if (e.target === overlay[0]) {
+                            overlay.remove();
+                            resolve();
+                        }
+                    });
+                });
             }
-        }, 50);
+        } catch (_) { /* closed / cancelled */ }
+        cleanup();
     }
 
     // ------------------------------------------------------------------
@@ -373,43 +538,84 @@
     // ------------------------------------------------------------------
     function injectSettingsDrawer() {
         const container = document.getElementById('extensions_settings');
-        if (!container || document.getElementById('menu-organizer-settings')) return;
-        const html = `
-            <div id="menu-organizer-settings" class="extension_settings_block">
-                <div class="inline-drawer">
-                    <div class="inline-drawer-toggle inline-drawer-header">
-                        <b><span class="fa-solid fa-list-check"></span> Menu Organizer</b>
-                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                    </div>
-                    <div class="inline-drawer-content">
-                        <p class="mo-desc">จัดเรียง ซ่อน/แสดง และย้ายบล็อกตั้งค่าของแต่ละ extension ในหน้านี้ได้ตามใจ</p>
-                        <div id="mo-open-editor" class="menu_button menu_button_icon">
-                            <span class="fa-solid fa-arrows-up-down-left-right"></span>
-                            <span>เปิดตัวจัดเรียงเมนู</span>
-                        </div>
+        if (!container || document.getElementById(OWN_ID)) return false;
+        const block = document.createElement('div');
+        block.id = OWN_ID;
+        block.className = 'extension_settings_block';
+        block.innerHTML = `
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b><span class="fa-solid fa-list-check"></span> Menu Organizer</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <p class="mo-desc">จัดเรียง ซ่อน/แสดง และย้ายบล็อกตั้งค่าของแต่ละ extension ในหน้านี้ได้ตามใจ · คอม/มือถือจำแยกกัน</p>
+                    <div id="mo-open-editor" class="menu_button menu_button_icon" role="button" tabindex="0">
+                        <span class="fa-solid fa-arrows-up-down-left-right"></span>
+                        <span>เปิดตัวจัดเรียงเมนู</span>
                     </div>
                 </div>
             </div>`;
-        $(container).append(html);
-        $('#mo-open-editor').on('click', openEditor);
+        container.appendChild(block);
+        const btn = document.getElementById('mo-open-editor');
+        if (btn) {
+            btn.addEventListener('click', openEditor);
+            btn.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openEditor();
+                }
+            });
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------
     // Boot
     // ------------------------------------------------------------------
+    let booted = false;
+    function finishBoot() {
+        if (booted) {
+            injectSettingsDrawer(); // idempotent
+            return;
+        }
+        if (!document.getElementById('extensions_settings')) return;
+        booted = true;
+        injectSettingsDrawer();
+        applyLayout();
+        startObserver();
+        watchProfile();
+        document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
+    }
+
     function onReady() {
+        let ticks = 0;
         const wait = setInterval(() => {
+            ticks++;
             if (document.getElementById('extensions_settings')) {
                 clearInterval(wait);
-                injectSettingsDrawer();
-                applyLayout();
-                startObserver();
-                watchProfile();
+                finishBoot();
+            } else if (ticks >= BOOT_POLL_MAX) {
+                clearInterval(wait);
+                // ยังไม่เจอ — รอครั้งเดียวด้วย MutationObserver แล้วตัดทิ้ง
+                const bootObs = new MutationObserver(() => {
+                    if (document.getElementById('extensions_settings')) {
+                        bootObs.disconnect();
+                        finishBoot();
+                    }
+                });
+                bootObs.observe(document.body, { childList: true, subtree: true });
+                setTimeout(() => bootObs.disconnect(), 120000);
             }
-        }, 300);
-        setTimeout(injectSettingsDrawer, 1500);
+        }, BOOT_POLL_MS);
+
+        // ย้ำหลังโหลดช้า (idempotent ผ่าน finishBoot / inject)
+        setTimeout(finishBoot, 1600);
     }
 
     if (window.SillyTavern?.getContext) onReady();
-    else { document.addEventListener('DOMContentLoaded', onReady); window.addEventListener('load', onReady); }
+    else {
+        document.addEventListener('DOMContentLoaded', onReady);
+        window.addEventListener('load', onReady);
+    }
 })();
