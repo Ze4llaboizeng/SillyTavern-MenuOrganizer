@@ -1,9 +1,12 @@
-/* Menu Organizer styles — light idle cost, touch + desktop friendly */
+/* Menu Organizer — light idle cost, touch + desktop friendly, no mobile overflow */
 
 .mo-desc {
     opacity: 0.8;
     font-size: 0.9em;
     margin: 0 0 8px 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .mo-editor {
@@ -11,27 +14,41 @@
     flex-direction: column;
     gap: 8px;
     text-align: left;
-    min-width: min(680px, 88vw);
+    width: min(680px, 100%);
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: hidden;
 }
 
 .mo-editor-hint {
     font-size: 0.85em;
     opacity: 0.8;
     line-height: 1.5;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .mo-columns {
     display: flex;
     gap: 12px;
     align-items: flex-start;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
 }
 
 .mo-col {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
+    max-width: 100%;
     display: flex;
     flex-direction: column;
     gap: 6px;
+    box-sizing: border-box;
 }
 
 .mo-col-title {
@@ -39,6 +56,10 @@
     opacity: 0.75;
     font-size: 0.85em;
     padding-left: 4px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .mo-list {
@@ -47,13 +68,17 @@
     gap: 4px;
     min-height: 60px;
     max-height: 55vh;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     padding: 6px;
     border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
     border-radius: 8px;
-    /* เลื่อน smooth เฉพาะเครื่องที่ไหว */
+    box-sizing: border-box;
     scroll-behavior: auto;
 }
 
@@ -64,11 +89,15 @@
     padding: 8px 10px;
     border-radius: 6px;
     background-color: var(--black30a, rgba(0, 0, 0, 0.2));
-    /* transition เบา — ปิดตอน reduced-motion */
     transition: background-color 0.12s ease, opacity 0.12s ease;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .mo-row:hover {
@@ -88,7 +117,7 @@
     opacity: 0.7;
     padding: 2px 4px;
     touch-action: none;
-    flex-shrink: 0;
+    flex: 0 0 auto;
 }
 
 .mo-handle:active {
@@ -96,16 +125,17 @@
 }
 
 .mo-icon {
-    width: 20px;
+    width: 1.25em;
     text-align: center;
     opacity: 0.9;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     pointer-events: none;
 }
 
 .mo-label {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -116,7 +146,7 @@
     padding: 4px 6px;
     border-radius: 4px;
     opacity: 0.8;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     touch-action: manipulation;
 }
 
@@ -127,6 +157,8 @@
 
 .mo-reset {
     align-self: flex-start;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 /* placeholder ระหว่างลาก (jQuery UI sortable) */
@@ -136,6 +168,8 @@
     border-radius: 6px;
     margin: 2px 0;
     background-color: var(--white20a, rgba(255, 255, 255, 0.05));
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 /* fallback overlay (กรณีไม่มี callGenericPopup) */
@@ -147,18 +181,23 @@
     align-items: center;
     justify-content: center;
     z-index: 10000;
+    padding: 12px;
+    box-sizing: border-box;
 }
 
 .mo-overlay .mo-editor {
     background-color: var(--SmartThemeBlurTintColor, #1a1a1a);
-    padding: 20px;
+    padding: 16px;
     border-radius: 10px;
     max-height: 85vh;
+    max-width: min(680px, 100%);
+    width: 100%;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
 }
 
-/* ป้ายบอกโปรไฟล์ที่กำลังตั้งค่า (คอม/มือถือ จำแยกกัน) */
+/* ป้ายโปรไฟล์ (คอม/มือถือ จำแยกกัน) */
 .mo-profile-badge {
     display: flex;
     align-items: center;
@@ -169,10 +208,25 @@
     border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
     font-size: 0.85em;
     line-height: 1.4;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .mo-profile-badge .fa-solid {
     opacity: 0.9;
+    flex: 0 0 auto;
+}
+
+.mo-profile-badge .mo-profile-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 /* แถวที่ล็อกซ่อนไม่ได้ */
@@ -186,7 +240,50 @@
     opacity: 0.5;
 }
 
-/* ประหยัดพลังงาน: ปิด transition / hover หนักเมื่อ user ขอ reduced motion */
+/* กัน helper ลากของ jQuery UI ดันความกว้างเกินจอ */
+.ui-sortable-helper.mo-row {
+    max-width: min(100vw - 24px, 100%);
+    box-sizing: border-box;
+}
+
+/* หน้า Extensions จริง: หัว drawer ยาวไม่ทะลุขอบ (มือถือสแตกคอลัมน์อยู่แล้ว) */
+#extensions_settings .inline-drawer-toggle.inline-drawer-header,
+#extensions_settings2 .inline-drawer-toggle.inline-drawer-header {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    gap: 6px;
+    overflow: hidden;
+}
+
+#extensions_settings .inline-drawer-toggle.inline-drawer-header > :not(.inline-drawer-icon),
+#extensions_settings2 .inline-drawer-toggle.inline-drawer-header > :not(.inline-drawer-icon) {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#extensions_settings .inline-drawer-toggle.inline-drawer-header .inline-drawer-icon,
+#extensions_settings2 .inline-drawer-toggle.inline-drawer-header .inline-drawer-icon {
+    flex: 0 0 auto;
+}
+
+#extensions_settings,
+#extensions_settings2 {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+#rm_extensions_block .extensions_block {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* ประหยัดพลังงาน: ปิด transition เมื่อ user ขอ reduced motion */
 @media (prefers-reduced-motion: reduce) {
     .mo-row {
         transition: none;
@@ -196,88 +293,142 @@
     }
 }
 
-/* จอมือถือ: คอลัมน์เรียงลง + เป้าแตะใหญ่ */
+/* จอมือถือ / จอแคบ: สแตกคอลัมน์ + เป้าแตะ + ข้อความไม่ล้น */
 @media (max-width: 768px) {
     .mo-columns {
         flex-direction: column;
+        width: 100%;
+        max-width: 100%;
+        gap: 10px;
     }
 
     .mo-editor {
-        min-width: 0;
         width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    .mo-col,
+    .mo-list {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
     }
 
     .mo-list {
-        max-height: 38vh;
-        /* มือถือ: เลื่อน list เอง ไม่ดึงทั้งหน้า */
+        max-height: 36vh;
         overscroll-behavior-y: contain;
     }
 
     .mo-row {
-        padding: 12px 12px;
-        gap: 12px;
-        min-height: 44px; /* เป้าแตะขั้นต่ำ */
+        padding: 10px;
+        gap: 8px;
+        min-height: 44px;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* เป้าแตะพอดี แต่อย่ากินพื้นที่ label หมด */
+    .mo-handle,
+    .mo-toggle {
+        padding: 8px;
+        font-size: 1.05em;
+        min-width: 40px;
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
     }
 
     .mo-handle {
-        padding: 10px 12px;
-        font-size: 1.15em;
-        min-width: 44px;
-        min-height: 44px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
         touch-action: none;
     }
 
-    .mo-toggle {
-        padding: 10px 12px;
-        font-size: 1.1em;
-        min-width: 44px;
-        min-height: 44px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
+    /* มือถือ: ตัด 2 บรรทัด แทนทะลุขอบ / ตัดกลางคำยาว */
+    .mo-label {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        line-height: 1.25;
     }
 
     .mo-sortable-placeholder {
         height: 48px;
+        width: 100%;
+        max-width: 100%;
     }
 
     .mo-profile-badge {
         font-size: 0.82em;
         padding: 10px;
+        align-items: flex-start;
+    }
+
+    .mo-profile-badge .mo-profile-text {
+        white-space: normal;
     }
 
     .mo-reset {
         min-height: 44px;
         display: inline-flex;
         align-items: center;
+        max-width: 100%;
+    }
+
+    /* popup ของ ST มักมี padding — กัน editor ดันเกิน */
+    .popup .popup-content .mo-editor,
+    .popup-content .mo-editor {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
     }
 }
 
 /* จอแคบมาก */
 @media (max-width: 380px) {
     .mo-list {
-        max-height: 34vh;
+        max-height: 32vh;
         padding: 4px;
     }
+
     .mo-row {
-        gap: 8px;
-        padding: 10px;
+        gap: 6px;
+        padding: 8px;
     }
+
+    .mo-handle,
+    .mo-toggle {
+        min-width: 36px;
+        min-height: 36px;
+        padding: 6px;
+        font-size: 1em;
+    }
+
+    .mo-icon {
+        width: 1em;
+    }
+
     .mo-label {
-        font-size: 0.95em;
+        font-size: 0.92em;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
     }
 }
 
-/* PC กว้าง: hover ชัด + list สูงขึ้นนิด */
+/* PC กว้าง */
 @media (min-width: 769px) {
     .mo-list {
         max-height: 58vh;
     }
+
     .mo-handle {
-        /* เมาส์: ลากง่าย ไม่ต้องเป้าใหญ่ */
         padding: 4px 6px;
     }
 }
