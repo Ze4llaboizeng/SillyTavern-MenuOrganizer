@@ -1,6 +1,6 @@
 {
     "display_name": "Menu Organizer",
-    "version": "1.2.3.1",
+    "version": "1.2.3.2",
     "author": "Zealllll",
     "description": "จัดเรียง ซ่อน/แสดง และย้ายบล็อกตั้งค่าของแต่ละ extension ในหน้า Extensions (ไอคอนลูกบาศก์) ได้ตามใจ ด้วยการลากวางข้ามคอลัมน์ พร้อมโปรไฟล์คอม/มือถือแยกกัน และโหมดประหยัดพลังงานตอน idle",
     "js": "index.js",
