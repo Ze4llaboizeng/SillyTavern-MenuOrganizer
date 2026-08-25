@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8')
-    .replace(/\}\)\(\);\s*$/, 'window.__moTest = { ensureKeys, defaultLayout };})();');
+    .replace(/\}\)\(\);\s*$/, 'window.__moTest = { ensureKeys, defaultLayout, persistEditor };})();');
 
 function item(id) {
     const attrs = new Map();
@@ -44,5 +44,23 @@ assert.deepEqual(
     JSON.parse(JSON.stringify(context.window.__moTest.defaultLayout)),
     { extensions_settings: ['id:a', 'id:b'], extensions_settings2: ['id:c'] },
 );
+
+const settings = {
+    layout: { extensions_settings: ['old-a'], extensions_settings2: ['old-b'] },
+    hidden: [],
+};
+const rows = ['id:a', 'id:c'].map(key => ({
+    getAttribute: () => key,
+    classList: { contains: () => key === 'id:c' },
+}));
+const mobileList = {
+    attr: () => 'extensions_settings',
+    find: () => ({ each: callback => rows.forEach(row => callback.call(row)) }),
+};
+context.window.__moTest.persistEditor([mobileList], settings);
+assert.deepEqual(JSON.parse(JSON.stringify(settings)), {
+    layout: { extensions_settings: ['id:a', 'id:c'], extensions_settings2: [] },
+    hidden: ['id:c'],
+});
 
 console.log('Menu Organizer self-check passed');
