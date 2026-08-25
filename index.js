@@ -14,6 +14,8 @@
         { id: 'extensions_settings', label: 'คอลัมน์ซ้าย' },
         { id: 'extensions_settings2', label: 'คอลัมน์ขวา' },
     ];
+    const defaultLayout = Object.fromEntries(COLS.map(c => [c.id, []]));
+    const defaultKeys = new Set();
 
     // debounce: idle ยาวขึ้น / ตอนมี editor เปิด ตอบสนองเร็วขึ้น
     const REAPPLY_MS_IDLE = 280;
@@ -105,6 +107,10 @@
                     child.setAttribute(KEY_ATTR, key);
                 }
                 seen.add(key);
+                if (!defaultKeys.has(key)) {
+                    defaultKeys.add(key);
+                    defaultLayout[c.id].push(key);
+                }
             }
         }
     }
@@ -335,10 +341,10 @@
                 <div class="mo-handle fa-solid fa-grip-vertical" title="ลากเพื่อจัดเรียง / ย้ายคอลัมน์" aria-label="ลากจัดเรียง"></div>
                 <div class="mo-icon" aria-hidden="true"></div>
                 <div class="mo-label"></div>
-                <div class="mo-toggle fa-solid ${locked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : 'fa-eye')}"
+                <button type="button" class="mo-toggle fa-solid ${locked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : 'fa-eye')}"
                      title="${locked ? 'บล็อกนี้ซ่อนไม่ได้ (กันเปิดกลับไม่ได้)' : 'ซ่อน/แสดง'}"
-                     role="button" tabindex="0"
-                     aria-label="${locked ? 'ซ่อนไม่ได้' : 'สลับซ่อน/แสดง'}"></div>
+                     aria-label="${locked ? 'ซ่อนไม่ได้' : 'ซ่อน/แสดงเมนูนี้'}"
+                     aria-pressed="${isHidden}" ${locked ? 'disabled' : ''}></button>
             </div>`);
         row.attr('data-key', key);
         if (locked) row.attr('data-locked', '1');
@@ -349,17 +355,11 @@
                 const nowHidden = row.toggleClass('mo-row-hidden').hasClass('mo-row-hidden');
                 row.find('.mo-toggle')
                     .toggleClass('fa-eye', !nowHidden)
-                    .toggleClass('fa-eye-slash', nowHidden);
+                    .toggleClass('fa-eye-slash', nowHidden)
+                    .attr('aria-pressed', String(nowHidden));
                 persist();
             };
-            row.find('.mo-toggle')
-                .on('click', toggle)
-                .on('keydown', e => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggle();
-                    }
-                });
+            row.find('.mo-toggle').on('click', toggle);
         }
         return row;
     }
@@ -410,34 +410,52 @@
                 : 'ลากด้วย <span class="fa-solid fa-grip-vertical"></span> เพื่อจัดเรียงหรือย้ายข้ามคอลัมน์ · กดตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ')
             + '</div>',
         );
-        wrapper.append(columns);
 
-        const resetBtn = $('<div class="menu_button mo-reset" role="button" tabindex="0"><span class="fa-solid fa-rotate-left"></span> คืนค่าเริ่มต้น</div>');
-        const doReset = () => {
-            const s = Core.settings;
-            for (const c of COLS) s.layout[c.id] = [];
-            s.hidden = [];
-            Core.save();
-            for (const c of COLS) {
-                const col = document.getElementById(c.id);
-                if (!col) continue;
-                for (const el of col.children) {
-                    if (el.dataset.moHidden === '1') {
-                        delete el.dataset.moHidden;
-                        el.style.removeProperty('display');
-                    }
-                }
-            }
-            lists.forEach(l => {
-                l.find('.mo-row-hidden').removeClass('mo-row-hidden');
-                l.find('.mo-row:not(.mo-row-locked) .mo-toggle').removeClass('fa-eye-slash').addClass('fa-eye');
-            });
-        };
-        resetBtn.on('click', doReset);
-        resetBtn.on('keydown', e => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doReset(); }
+        const search = $('<input class="text_pole mo-search" type="search" placeholder="ค้นหาเมนู…" aria-label="ค้นหาเมนู">');
+        const status = $('<span class="mo-search-status" aria-live="polite"></span>');
+        search.on('input', function () {
+            const query = this.value.trim().toLocaleLowerCase();
+            let found = 0;
+            lists.forEach(list => list.find('.mo-row').each(function () {
+                const match = !query || $(this).find('.mo-label').text().toLocaleLowerCase().includes(query);
+                this.hidden = !match;
+                if (match) found++;
+            }));
+            status.text(query ? `พบ ${found} เมนู` : '');
         });
-        wrapper.append(resetBtn);
+
+        const showAllBtn = $('<button type="button" class="menu_button menu_button_icon mo-show-all"><span class="fa-solid fa-eye"></span> แสดงทั้งหมด</button>');
+        showAllBtn.on('click', () => {
+            lists.forEach(list => {
+                list.find('.mo-row-hidden').removeClass('mo-row-hidden');
+                list.find('.mo-row:not(.mo-row-locked) .mo-toggle')
+                    .removeClass('fa-eye-slash').addClass('fa-eye')
+                    .attr('aria-pressed', 'false');
+            });
+            search.val('').trigger('input');
+            persist();
+        });
+
+        const resetBtn = $('<button type="button" class="menu_button menu_button_icon mo-reset"><span class="fa-solid fa-rotate-left"></span> คืนค่าเริ่มต้น</button>');
+        resetBtn.on('click', () => {
+            if (!window.confirm('คืนลำดับและการแสดงเมนูทั้งหมดเป็นค่าเริ่มต้นของโปรไฟล์นี้?')) return;
+
+            const rows = new Map();
+            lists.forEach(list => list.find('.mo-row').each(function () {
+                rows.set(this.getAttribute('data-key'), this);
+            }));
+            COLS.forEach((c, i) => defaultLayout[c.id].forEach(key => {
+                const row = rows.get(key);
+                if (row) lists[i].append(row);
+            }));
+            showAllBtn.trigger('click');
+        });
+
+        const toolbar = $('<div class="mo-toolbar"></div>');
+        toolbar.append($('<div class="mo-search-wrap"><span class="fa-solid fa-magnifying-glass" aria-hidden="true"></span></div>').append(search));
+        toolbar.append($('<div class="mo-actions"></div>').append(showAllBtn, resetBtn));
+        wrapper.append(toolbar, status);
+        wrapper.append(columns);
 
         return { wrapper, lists, persist };
     }
@@ -550,23 +568,15 @@
                 </div>
                 <div class="inline-drawer-content">
                     <p class="mo-desc">จัดเรียง ซ่อน/แสดง และย้ายบล็อกตั้งค่าของแต่ละ extension ในหน้านี้ได้ตามใจ · คอม/มือถือจำแยกกัน</p>
-                    <div id="mo-open-editor" class="menu_button menu_button_icon" role="button" tabindex="0">
+                    <button type="button" id="mo-open-editor" class="menu_button menu_button_icon">
                         <span class="fa-solid fa-arrows-up-down-left-right"></span>
                         <span>เปิดตัวจัดเรียงเมนู</span>
-                    </div>
+                    </button>
                 </div>
             </div>`;
         container.appendChild(block);
         const btn = document.getElementById('mo-open-editor');
-        if (btn) {
-            btn.addEventListener('click', openEditor);
-            btn.addEventListener('keydown', e => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    openEditor();
-                }
-            });
-        }
+        if (btn) btn.addEventListener('click', openEditor);
         return true;
     }
 
