@@ -78,6 +78,11 @@
     opacity: 0.7;
 }
 
+.mo-mobile-tabs,
+.mo-move {
+    display: none;
+}
+
 .mo-columns {
     display: flex;
     gap: 12px;
@@ -370,10 +375,33 @@
     }
 
     .mo-columns {
-        flex-direction: column;
+        display: block;
         width: 100%;
         max-width: 100%;
-        gap: 10px;
+    }
+
+    .mo-mobile-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 8px;
+        background-color: var(--black30a, rgba(0, 0, 0, 0.2));
+    }
+
+    .mo-tab {
+        min-width: 0;
+        min-height: 44px;
+        border: 0;
+        border-radius: 6px;
+        color: inherit;
+        background: transparent;
+        cursor: pointer;
+    }
+
+    .mo-tab.mo-tab-active {
+        font-weight: bold;
+        background-color: var(--white20a, rgba(255, 255, 255, 0.14));
     }
 
     .mo-editor {
@@ -382,15 +410,28 @@
         min-width: 0;
     }
 
-    .mo-col,
     .mo-list {
         width: 100%;
         max-width: 100%;
         min-width: 0;
     }
 
+    .mo-col {
+        display: none;
+    }
+
+    .mo-col.mo-col-active {
+        display: flex;
+    }
+
+    .mo-col-title {
+        display: none;
+    }
+
     .mo-list {
-        max-height: 36vh;
+        height: min(54vh, 520px);
+        height: min(54dvh, 520px);
+        max-height: none;
         overscroll-behavior-y: contain;
     }
 
@@ -404,6 +445,7 @@
 
     /* เป้าแตะพอดี แต่อย่ากินพื้นที่ label หมด */
     .mo-handle,
+    .mo-move,
     .mo-toggle {
         padding: 8px;
         font-size: 1.05em;
@@ -417,6 +459,14 @@
 
     .mo-handle {
         touch-action: none;
+    }
+
+    .mo-move {
+        border: 0;
+        color: inherit;
+        background: transparent;
+        cursor: pointer;
+        touch-action: manipulation;
     }
 
     /* มือถือ: ตัด 2 บรรทัด แทนทะลุขอบ / ตัดกลางคำยาว */
@@ -467,12 +517,9 @@
 
 /* จอแคบมาก */
 @media (max-width: 380px) {
-    .mo-actions {
-        flex-direction: column;
-    }
-
     .mo-list {
-        max-height: 32vh;
+        height: 50vh;
+        height: 50dvh;
         padding: 4px;
     }
 
@@ -482,6 +529,7 @@
     }
 
     .mo-handle,
+    .mo-move,
     .mo-toggle {
         min-width: 36px;
         min-height: 36px;

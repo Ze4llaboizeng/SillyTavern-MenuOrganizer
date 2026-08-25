@@ -341,6 +341,9 @@
                 <div class="mo-handle fa-solid fa-grip-vertical" title="ลากเพื่อจัดเรียง / ย้ายคอลัมน์" aria-label="ลากจัดเรียง"></div>
                 <div class="mo-icon" aria-hidden="true"></div>
                 <div class="mo-label"></div>
+                <button type="button" class="mo-move" title="ย้ายไปอีกกลุ่ม" aria-label="ย้ายไปอีกกลุ่ม">
+                    <span class="fa-solid fa-arrow-down" aria-hidden="true"></span>
+                </button>
                 <button type="button" class="mo-toggle fa-solid ${locked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : 'fa-eye')}"
                      title="${locked ? 'บล็อกนี้ซ่อนไม่ได้ (กันเปิดกลับไม่ได้)' : 'ซ่อน/แสดง'}"
                      aria-label="${locked ? 'ซ่อนไม่ได้' : 'ซ่อน/แสดงเมนูนี้'}"
@@ -375,7 +378,20 @@
         const settings = Core.settings;
         const hiddenSet = new Set(settings.hidden);
         const lists = [];
-        const persist = () => persistEditor(lists, settings);
+        const colWraps = [];
+        const tabButtons = [];
+        const refreshMoveButtons = () => lists.forEach((list, i) => {
+            const label = i === 0 ? 'ย้ายไปกลุ่มล่าง' : 'ย้ายไปกลุ่มบน';
+            list.find('.mo-move')
+                .attr({ title: label, 'aria-label': label })
+                .find('.fa-solid')
+                .toggleClass('fa-arrow-down', i === 0)
+                .toggleClass('fa-arrow-up', i !== 0);
+        });
+        const persist = () => {
+            refreshMoveButtons();
+            persistEditor(lists, settings);
+        };
         const columns = $('<div class="mo-columns"></div>');
         const mobile = currentProfile() === 'mobile';
 
@@ -393,20 +409,45 @@
             }
             colWrap.append(list);
             columns.append(colWrap);
+            colWraps.push(colWrap);
             lists.push(list);
         });
+
+        const activateColumn = index => {
+            colWraps.forEach((col, i) => col.toggleClass('mo-col-active', i === index));
+            tabButtons.forEach((tab, i) => tab
+                .toggleClass('mo-tab-active', i === index)
+                .attr('aria-selected', String(i === index)));
+        };
+        const mobileTabs = $('<div class="mo-mobile-tabs" role="tablist" aria-label="เลือกกลุ่มเมนู"></div>');
+        ['กลุ่มบน', 'กลุ่มล่าง'].forEach((label, i) => {
+            const tab = $(`<button type="button" class="mo-tab" role="tab">${label}</button>`);
+            tab.on('click', () => activateColumn(i));
+            tabButtons.push(tab);
+            mobileTabs.append(tab);
+        });
+        lists.forEach((list, i) => list.on('click', '.mo-move', function () {
+            const target = i === 0 ? 1 : 0;
+            lists[target].append($(this).closest('.mo-row'));
+            persist();
+            activateColumn(target);
+        }));
+        refreshMoveButtons();
+        activateColumn(0);
 
         const wrapper = $('<div class="mo-editor"></div>');
         const badge = $('<div class="mo-profile-badge"><span class="fa-solid"></span> <span class="mo-profile-text"></span></div>');
         badge.find('.fa-solid').addClass(mobile ? 'fa-mobile-screen-button' : 'fa-desktop');
         badge.find('.mo-profile-text').text(
-            'กำลังตั้งค่าสำหรับ: ' + profileLabel(currentProfile()) + ' (คอมกับมือถือจำแยกกัน)',
+            mobile
+                ? 'โปรไฟล์มือถือ · แยกจากคอมพิวเตอร์'
+                : 'กำลังตั้งค่าสำหรับ: ' + profileLabel(currentProfile()) + ' (คอมกับมือถือจำแยกกัน)',
         );
         wrapper.append(badge);
         wrapper.append(
             '<div class="mo-editor-hint">'
             + (mobile
-                ? 'กดค้างที่ <span class="fa-solid fa-grip-vertical"></span> แล้วลากเพื่อจัดเรียง · แตะตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ'
+                ? 'ลาก <span class="fa-solid fa-grip-vertical"></span> เพื่อเรียง · กดลูกศรเพื่อย้ายกลุ่ม · กดตาเพื่อซ่อน · บันทึกอัตโนมัติ'
                 : 'ลากด้วย <span class="fa-solid fa-grip-vertical"></span> เพื่อจัดเรียงหรือย้ายข้ามคอลัมน์ · กดตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ')
             + '</div>',
         );
@@ -455,6 +496,7 @@
         toolbar.append($('<div class="mo-search-wrap"><span class="fa-solid fa-magnifying-glass" aria-hidden="true"></span></div>').append(search));
         toolbar.append($('<div class="mo-actions"></div>').append(showAllBtn, resetBtn));
         wrapper.append(toolbar, status);
+        wrapper.append(mobileTabs);
         wrapper.append(columns);
 
         return { wrapper, lists, persist };
