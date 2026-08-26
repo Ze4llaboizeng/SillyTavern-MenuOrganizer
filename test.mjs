@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('./index.js', import.meta.url), 'utf8')
-    .replace(/\}\)\(\);\s*$/, 'window.__moTest = { ensureKeys, defaultLayout, persistEditor };})();');
+    .replace(/\}\)\(\);\s*$/, 'window.__moTest = { ensureKeys, defaultLayout, persistEditor, normalizeExtensionEntry, dedupeBranches, compareBranchNames };})();');
 
 function item(id) {
     const attrs = new Map();
@@ -62,5 +62,30 @@ assert.deepEqual(JSON.parse(JSON.stringify(settings)), {
     layout: { extensions_settings: ['id:a', 'id:c'], extensions_settings2: [] },
     hidden: ['id:c'],
 });
+
+assert.equal(context.window.__moTest.normalizeExtensionEntry({ type: 'system', name: 'caption' }), null);
+assert.deepEqual(
+    JSON.parse(JSON.stringify(context.window.__moTest.normalizeExtensionEntry({ type: 'global', name: 'third-party/Quick-Reply' }))),
+    {
+        id: 'global:Quick-Reply',
+        extensionName: 'Quick-Reply',
+        internalName: 'third-party/Quick-Reply',
+        global: true,
+        type: 'global',
+    },
+);
+
+const branches = context.window.__moTest.dedupeBranches([
+    { name: 'origin/v1.9.0', current: false, commit: 'remote-old' },
+    { name: 'v1.9.0', current: true, commit: 'local-old' },
+    { name: 'origin/v2.1.0', current: false, commit: 'remote-new' },
+    { name: 'origin/main', current: false, commit: 'main' },
+    { name: 'origin/HEAD', current: false, commit: 'head' },
+]);
+assert.deepEqual(JSON.parse(JSON.stringify(branches.map(branch => [branch.name, branch.shortName, branch.current]))), [
+    ['origin/v2.1.0', 'v2.1.0', false],
+    ['v1.9.0', 'v1.9.0', true],
+    ['origin/main', 'main', false],
+]);
 
 console.log('Menu Organizer self-check passed');

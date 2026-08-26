@@ -9,6 +9,191 @@
     word-break: break-word;
 }
 
+.mo-entry-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mo-entry-actions .menu_button {
+    margin: 0;
+}
+
+/* Third-party extension Version Manager */
+.mo-version-manager {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(820px, 100%);
+    max-width: 100%;
+    min-width: 0;
+    max-height: min(76vh, 820px);
+    text-align: left;
+    box-sizing: border-box;
+}
+
+.mo-version-intro {
+    padding: 9px 11px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.18));
+    border-radius: 8px;
+    background: var(--black30a, rgba(0, 0, 0, 0.2));
+    font-size: 0.86em;
+    line-height: 1.45;
+    opacity: 0.88;
+}
+
+.mo-version-toolbar,
+.mo-version-head,
+.mo-version-title-wrap,
+.mo-version-actions,
+.mo-version-meta,
+.mo-version-controls {
+    display: flex;
+    align-items: center;
+}
+
+.mo-version-toolbar,
+.mo-version-head {
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.mo-version-summary {
+    min-width: 0;
+    font-weight: 600;
+}
+
+.mo-version-actions,
+.mo-version-title-wrap,
+.mo-version-meta,
+.mo-version-controls {
+    gap: 7px;
+}
+
+.mo-version-actions .menu_button,
+.mo-version-head .menu_button,
+.mo-version-controls .menu_button {
+    margin: 0;
+}
+
+.mo-version-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 80px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 3px;
+}
+
+.mo-version-card {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 11px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.18));
+    border-radius: 9px;
+    background: var(--black30a, rgba(0, 0, 0, 0.2));
+    transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+.mo-version-card.mo-version-pinned {
+    border-color: var(--SmartThemeQuoteColor, rgba(130, 190, 255, 0.65));
+}
+
+.mo-version-card.mo-card-busy {
+    opacity: 0.68;
+}
+
+.mo-version-title-wrap {
+    min-width: 0;
+}
+
+.mo-version-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mo-scope-badge {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--white20a, rgba(255, 255, 255, 0.1));
+    font-size: 0.72em;
+    opacity: 0.8;
+}
+
+.mo-pin[aria-pressed="true"] {
+    color: var(--SmartThemeQuoteColor, #8fc7ff);
+}
+
+.mo-version-meta {
+    flex-wrap: wrap;
+    font-size: 0.82em;
+    opacity: 0.82;
+}
+
+.mo-version-meta > span:not(:empty):not(:last-child)::after {
+    content: " ·";
+    opacity: 0.55;
+}
+
+.mo-version-status {
+    min-height: 1.2em;
+    font-size: 0.82em;
+    color: var(--SmartThemeBodyColor, inherit);
+    opacity: 0.78;
+}
+
+.mo-version-status.mo-update-available {
+    color: var(--SmartThemeQuoteColor, #8fc7ff);
+    opacity: 1;
+    font-weight: 600;
+}
+
+.mo-version-controls {
+    width: 100%;
+    min-width: 0;
+}
+
+.mo-branch-prev,
+.mo-branch-next {
+    flex: 0 0 38px;
+    min-width: 38px;
+    padding-inline: 8px;
+}
+
+.mo-branch-select {
+    flex: 1 1 220px;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0 !important;
+}
+
+.mo-update-one {
+    flex: 0 0 auto;
+}
+
+.mo-card-error {
+    min-height: 0;
+    color: var(--warning, #ff9b9b);
+    font-size: 0.8em;
+    overflow-wrap: anywhere;
+}
+
+.mo-card-error:empty {
+    display: none;
+}
+
+.mo-version-loading,
+.mo-version-empty {
+    padding: 24px 12px;
+    text-align: center;
+    opacity: 0.78;
+}
+
 .mo-editor {
     display: flex;
     flex-direction: column;
@@ -461,9 +646,89 @@
         max-width: 100%;
     }
 
+    .mo-entry-actions {
+        flex-direction: column;
+    }
+
+    .mo-entry-actions .menu_button {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .mo-version-manager {
+        width: 100%;
+        max-height: 78vh;
+        max-height: 78dvh;
+    }
+
+    .mo-version-toolbar,
+    .mo-version-controls {
+        align-items: stretch;
+        flex-wrap: wrap;
+    }
+
+    .mo-version-summary,
+    .mo-version-actions {
+        width: 100%;
+    }
+
+    .mo-version-actions .menu_button {
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 42px;
+    }
+
+    .mo-version-card {
+        padding: 10px;
+    }
+
+    .mo-version-head {
+        align-items: flex-start;
+    }
+
+    .mo-version-title-wrap {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .mo-version-title {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .mo-branch-select {
+        order: 1;
+        flex: 1 1 calc(100% - 92px);
+        min-height: 42px;
+    }
+
+    .mo-branch-prev {
+        order: 0;
+        min-height: 42px;
+    }
+
+    .mo-branch-next {
+        order: 2;
+        min-height: 42px;
+    }
+
+    .mo-update-one {
+        order: 3;
+        flex: 1 1 100%;
+        min-height: 42px;
+    }
+
     /* popup ของ ST มักมี padding — กัน editor ดันเกิน */
     .popup .popup-content .mo-editor,
     .popup-content .mo-editor {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .popup .popup-content .mo-version-manager,
+    .popup-content .mo-version-manager {
         width: 100% !important;
         max-width: 100% !important;
         min-width: 0 !important;

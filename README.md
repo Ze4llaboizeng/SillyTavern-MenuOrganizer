@@ -12,6 +12,27 @@
 5. กดรูปตา 👁 เพื่อซ่อน/แสดงแต่ละบล็อก
 6. ทุกการเปลี่ยนแปลงถูกบันทึกอัตโนมัติ (ผ่าน extension settings)
 
+## Version Manager (v1.3)
+
+กด **Version Manager** ใน drawer ของ Menu Organizer เพื่อจัดการ third-party Git extensions ที่ติดตั้งอยู่:
+
+- ดูเลข version จาก `manifest.json`, branch และ commit ปัจจุบัน
+- ดูสถานะว่า branch ปัจจุบันมี update หรือไม่
+- เลือก/switch ระหว่าง local และ remote branches (รวมถึง branch ที่ตั้งชื่อเป็น version)
+- ใช้ปุ่ม ◀ / ▶ เพื่อเลื่อนไป branch ก่อนหน้า/ถัดไปในรายการ
+- **Update** รายตัวจะ pull เฉพาะ branch ที่ extension ตัวนั้นใช้อยู่
+- **Pin** เพื่อให้ **Update All** ข้าม extension ตัวนั้น
+- **Check All** ตรวจสถานะและ branch ของทุกตัวใหม่
+
+การ switch branch หรือ update ต้อง reload หน้า SillyTavern เพื่อให้ JavaScript/CSS ของ extension เวอร์ชันใหม่ถูกโหลดครบ
+
+### ขอบเขต
+
+- รองรับเฉพาะ extension ที่ `/api/extensions/discover` รายงานเป็น `local` หรือ `global` เท่านั้น; built-in/system extensions จะไม่ถูกแตะ
+- ใช้ API มาตรฐาน `/version`, `/branches`, `/switch` และ `/update` ของ SillyTavern
+- Git tags และการ checkout commit โดยตรงยังไม่รองรับ เพราะ SillyTavern ไม่มี generic endpoint สำหรับสองอย่างนี้
+- การจัดการ global extension อาจต้องใช้บัญชี admin ตามสิทธิ์ที่ SillyTavern กำหนด
+
 ## จอคอม / จอมือถือ จำแยกกัน
 
 - ตัวจัดเรียงตรวจจับขนาดจอ (`max-width: 768px`) แล้วเก็บลำดับ + การซ่อน **แยกโปรไฟล์**

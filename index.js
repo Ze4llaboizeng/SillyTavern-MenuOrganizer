@@ -58,6 +58,9 @@
             }
             delete s.layout;
             delete s.hidden;
+            if (!s.versionPins || typeof s.versionPins !== 'object' || Array.isArray(s.versionPins)) {
+                s.versionPins = {};
+            }
             return s;
         },
         profile(name) {
@@ -77,6 +80,433 @@
             if (ctx?.saveSettingsDebounced) ctx.saveSettingsDebounced();
         },
     };
+
+    // ------------------------------------------------------------------
+    // Third-party extension version management
+    // ------------------------------------------------------------------
+    function normalizeExtensionEntry(entry) {
+        if (!entry || !['local', 'global'].includes(entry.type) || typeof entry.name !== 'string') return null;
+        const extensionName = entry.name.replace(/^third-party\//, '');
+        if (!extensionName) return null;
+        return {
+            id: `${entry.type}:${extensionName}`,
+            extensionName,
+            internalName: entry.name,
+            global: entry.type === 'global',
+            type: entry.type,
+        };
+    }
+
+    function pinKey(item) {
+        return `${item.type}:${item.extensionName}`;
+    }
+
+    function isPinned(item) {
+        return Core.root?.versionPins?.[pinKey(item)] === true;
+    }
+
+    function setPinned(item, pinned) {
+        const root = Core.root;
+        if (!root) return;
+        if (pinned) root.versionPins[pinKey(item)] = true;
+        else delete root.versionPins[pinKey(item)];
+        Core.save();
+    }
+
+    function compareBranchNames(a, b) {
+        const parse = name => {
+            const match = String(name).match(/^v?(\d+)\.(\d+)(?:\.(\d+))?(?:[-.]([0-9A-Za-z.-]+))?$/);
+            return match ? [Number(match[1]), Number(match[2]), Number(match[3] || 0), match[4] || ''] : null;
+        };
+        const av = parse(a);
+        const bv = parse(b);
+        if (av && bv) {
+            for (let i = 0; i < 3; i++) if (av[i] !== bv[i]) return bv[i] - av[i];
+            if (av[3] !== bv[3]) return av[3] ? 1 : -1;
+        } else if (av) return -1;
+        else if (bv) return 1;
+        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    function dedupeBranches(branches) {
+        const byName = new Map();
+        for (const branch of Array.isArray(branches) ? branches : []) {
+            if (!branch || typeof branch.name !== 'string' || branch.name === 'origin/HEAD') continue;
+            const shortName = branch.name.replace(/^origin\//, '');
+            const previous = byName.get(shortName);
+            const isLocal = !branch.name.startsWith('origin/');
+            if (!previous || branch.current || (!previous.current && isLocal && previous.name.startsWith('origin/'))) {
+                byName.set(shortName, { ...branch, shortName });
+            }
+        }
+        return [...byName.values()].sort((a, b) => compareBranchNames(a.shortName, b.shortName));
+    }
+
+    async function apiRequest(path, body) {
+        const ctx = Core.getContext();
+        const options = body === undefined
+            ? { method: 'GET' }
+            : {
+                method: 'POST',
+                headers: ctx?.getRequestHeaders?.() || { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            };
+        const response = await fetch(path, options);
+        if (!response.ok) {
+            const message = (await response.text()).trim();
+            throw new Error(message || `${response.status} ${response.statusText}`);
+        }
+        if (response.status === 204) return null;
+        const text = await response.text();
+        return text ? JSON.parse(text) : null;
+    }
+
+    function notify(level, message, title) {
+        const toast = window.toastr?.[level];
+        if (typeof toast === 'function') toast(message, title);
+        else if (level === 'error') console.error(title || 'Menu Organizer', message);
+        else console.info(title || 'Menu Organizer', message);
+    }
+
+    async function mapLimit(items, limit, worker) {
+        let next = 0;
+        const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+            while (next < items.length) {
+                const index = next++;
+                await worker(items[index], index);
+            }
+        });
+        await Promise.all(runners);
+    }
+
+    function extensionDisplayName(item) {
+        const manifest = Core.getContext()?.getExtensionManifest?.(item.internalName)
+            || Core.getContext()?.getExtensionManifest?.(item.extensionName);
+        return manifest?.display_name || item.extensionName;
+    }
+
+    function extensionManifestVersion(item) {
+        if (item.manifestVersion) return item.manifestVersion;
+        const manifest = Core.getContext()?.getExtensionManifest?.(item.internalName)
+            || Core.getContext()?.getExtensionManifest?.(item.extensionName);
+        return manifest?.version || '';
+    }
+
+    async function refreshManifestVersion(item) {
+        const manifestPath = item.internalName.split('/').map(encodeURIComponent).join('/');
+        try {
+            const manifest = await apiRequest(`/scripts/extensions/${manifestPath}/manifest.json?mo=${Date.now()}`);
+            item.manifestVersion = manifest?.version || '';
+        } catch (_) { /* manifest อาจหาย/เปลี่ยนระหว่างสลับ branch; ใช้ค่าที่โหลดไว้แทน */ }
+    }
+
+    function makeVersionCard(item, manager) {
+        const card = $(`
+            <section class="mo-version-card">
+                <div class="mo-version-head">
+                    <div class="mo-version-title-wrap">
+                        <strong class="mo-version-title"></strong>
+                        <span class="mo-scope-badge"></span>
+                    </div>
+                    <button type="button" class="mo-pin menu_button menu_button_icon" aria-pressed="false">
+                        <span class="fa-solid fa-lock-open"></span><span class="mo-pin-label"> Pin</span>
+                    </button>
+                </div>
+                <div class="mo-version-meta">
+                    <span class="mo-current-version">กำลังตรวจสอบ…</span>
+                    <span class="mo-current-branch"></span>
+                    <span class="mo-current-commit"></span>
+                </div>
+                <div class="mo-version-status" aria-live="polite">รอสักครู่…</div>
+                <div class="mo-version-controls">
+                    <button type="button" class="mo-branch-prev menu_button" title="Older / branch ลำดับถัดไป" aria-label="เลือก version เก่ากว่าหรือ branch ลำดับถัดไป">◀</button>
+                    <select class="text_pole mo-branch-select" aria-label="เลือก version หรือ branch" disabled>
+                        <option>กำลังโหลด branches…</option>
+                    </select>
+                    <button type="button" class="mo-branch-next menu_button" title="Newer / branch ลำดับก่อนหน้า" aria-label="เลือก version ใหม่กว่าหรือ branch ลำดับก่อนหน้า">▶</button>
+                    <button type="button" class="mo-update-one menu_button menu_button_icon">
+                        <span class="fa-solid fa-download"></span><span> Update</span>
+                    </button>
+                </div>
+                <div class="mo-card-error" role="alert"></div>
+            </section>`);
+        card.find('.mo-version-title').text(extensionDisplayName(item));
+        card.find('.mo-scope-badge').text(item.global ? 'Global' : 'Local');
+        item.card = card;
+        item.busy = false;
+
+        const setBusy = busy => {
+            item.busy = busy;
+            card.toggleClass('mo-card-busy', busy);
+            card.find('button, select').prop('disabled', busy || !item.version?.currentCommitHash);
+            card.find('.mo-pin').prop('disabled', busy);
+        };
+
+        const syncPin = () => {
+            const pinned = isPinned(item);
+            card.toggleClass('mo-version-pinned', pinned);
+            card.find('.mo-pin')
+                .attr('aria-pressed', String(pinned))
+                .attr('title', pinned ? 'เลิก Pin เพื่อให้ Update All อัปเดตตัวนี้' : 'Pin เพื่อข้ามตัวนี้ตอน Update All')
+                .find('.fa-solid').toggleClass('fa-lock', pinned).toggleClass('fa-lock-open', !pinned);
+            card.find('.mo-pin-label').text(pinned ? ' Pinned' : ' Pin');
+        };
+
+        const paint = () => {
+            const version = item.version || {};
+            const manifestVersion = extensionManifestVersion(item);
+            const branches = item.branches || [];
+            const current = branches.find(branch => branch.current);
+            const currentName = version.currentBranchName || current?.shortName || '';
+            const isGit = Boolean(version.currentCommitHash);
+            card.find('.mo-current-version').text(manifestVersion ? `v${String(manifestVersion).replace(/^v/, '')}` : (isGit ? 'ไม่มีเลข version ใน manifest' : 'ไม่ใช่ Git repository'));
+            card.find('.mo-current-branch').text(currentName ? `Branch: ${currentName}` : '');
+            card.find('.mo-current-commit').text(version.currentCommitHash ? `Commit: ${version.currentCommitHash.slice(0, 7)}` : '');
+            card.find('.mo-version-status')
+                .toggleClass('mo-update-available', isGit && version.isUpToDate === false)
+                .text(!isGit ? 'จัดการเวอร์ชันไม่ได้' : (version.isUpToDate ? 'เป็นเวอร์ชันล่าสุดของ branch นี้แล้ว' : 'มีอัปเดตใน branch นี้'));
+
+            const select = card.find('.mo-branch-select').empty();
+            if (!branches.length) select.append($('<option>').text(currentName || 'ไม่พบ branch').val(currentName));
+            else branches.forEach(branch => select.append(
+                $('<option>').val(branch.name).text(`${branch.shortName}${branch.current ? ' · Current' : ''}`),
+            ));
+            if (current) select.val(current.name);
+            else if (currentName) {
+                const match = branches.find(branch => branch.shortName === currentName);
+                if (match) select.val(match.name);
+            }
+            setBusy(false);
+            card.find('.mo-branch-prev, .mo-branch-next').prop('disabled', !isGit || branches.length < 2);
+            card.find('.mo-branch-select').prop('disabled', !isGit || branches.length < 2);
+            card.find('.mo-update-one').prop('disabled', !isGit);
+            card.find('.mo-pin').prop('disabled', !isGit);
+            syncPin();
+        };
+
+        const refresh = async () => {
+            setBusy(true);
+            card.find('.mo-card-error').empty();
+            card.find('.mo-version-status').text('กำลังตรวจสอบ repository…');
+            try {
+                item.version = await apiRequest('/api/extensions/version', {
+                    extensionName: item.extensionName,
+                    global: item.global,
+                });
+                await refreshManifestVersion(item);
+                item.branches = [];
+                let branchError = '';
+                if (item.version?.currentCommitHash) {
+                    try {
+                        item.branches = dedupeBranches(await apiRequest('/api/extensions/branches', {
+                            extensionName: item.extensionName,
+                            global: item.global,
+                        }));
+                    } catch (error) {
+                        branchError = error.message || String(error);
+                    }
+                }
+                paint();
+                if (branchError) card.find('.mo-card-error').text(`โหลด branches ไม่สำเร็จ: ${branchError}`);
+            } catch (error) {
+                item.version = null;
+                item.branches = [];
+                setBusy(false);
+                card.find('.mo-version-status').text('ตรวจสอบไม่สำเร็จ');
+                card.find('.mo-card-error').text(error.message || String(error));
+            }
+        };
+
+        const switchBranch = async branchName => {
+            const branch = item.branches.find(value => value.name === branchName);
+            if (!branch || branch.current || item.busy) return;
+            if (!window.confirm(`สลับ ${extensionDisplayName(item)} ไปที่ branch “${branch.shortName}”?\n\nควร reload หน้า SillyTavern หลังสลับเพื่อใช้ไฟล์ของ branch ใหม่`)) {
+                paint();
+                return;
+            }
+            setBusy(true);
+            card.find('.mo-version-status').text(`กำลังสลับไป ${branch.shortName}…`);
+            try {
+                await apiRequest('/api/extensions/switch', {
+                    extensionName: item.extensionName,
+                    branch: branch.name,
+                    global: item.global,
+                });
+                notify('success', `${extensionDisplayName(item)} → ${branch.shortName}`, 'สลับ branch แล้ว · กรุณา reload หน้า');
+                await refresh();
+            } catch (error) {
+                setBusy(false);
+                paint();
+                card.find('.mo-card-error').text(error.message || String(error));
+                notify('error', error.message || String(error), 'สลับ branch ไม่สำเร็จ');
+            }
+        };
+
+        const update = async ({ quiet = false } = {}) => {
+            if (!item.version?.currentCommitHash || item.busy) return false;
+            setBusy(true);
+            card.find('.mo-card-error').empty();
+            card.find('.mo-version-status').text('กำลังอัปเดต branch ปัจจุบัน…');
+            try {
+                await apiRequest('/api/extensions/update', {
+                    extensionName: item.extensionName,
+                    global: item.global,
+                });
+                await refresh();
+                if (!quiet) notify('success', `${extensionDisplayName(item)} อัปเดตแล้ว`, 'กรุณา reload หน้าเพื่อใช้เวอร์ชันใหม่');
+                return true;
+            } catch (error) {
+                setBusy(false);
+                paint();
+                card.find('.mo-card-error').text(error.message || String(error));
+                if (!quiet) notify('error', error.message || String(error), 'อัปเดตไม่สำเร็จ');
+                return false;
+            }
+        };
+
+        card.find('.mo-pin').on('click', () => {
+            setPinned(item, !isPinned(item));
+            syncPin();
+            manager.updateSummary();
+        });
+        card.find('.mo-branch-select').on('change', function () { void switchBranch(this.value); });
+        card.find('.mo-branch-prev, .mo-branch-next').on('click', function () {
+            const branches = item.branches || [];
+            const currentIndex = Math.max(0, branches.findIndex(branch => branch.current));
+            // Version-like branches เรียงใหม่ -> เก่า: ซ้ายไป index ถัดไป, ขวาไป index ก่อนหน้า
+            const delta = $(this).hasClass('mo-branch-prev') ? 1 : -1;
+            const nextIndex = Math.min(branches.length - 1, Math.max(0, currentIndex + delta));
+            if (nextIndex !== currentIndex) void switchBranch(branches[nextIndex].name);
+        });
+        card.find('.mo-update-one').on('click', () => void update());
+        syncPin();
+        return { card, refresh, update, paint };
+    }
+
+    function buildVersionManager() {
+        const wrapper = $(`
+            <div class="mo-version-manager">
+                <div class="mo-version-intro">
+                    จัดการเฉพาะ third-party Git extensions · เลือกได้ตาม branch ที่ repository มี (Git tags ยังไม่รองรับโดย SillyTavern API)
+                </div>
+                <div class="mo-version-toolbar">
+                    <div class="mo-version-summary" aria-live="polite">กำลังค้นหา extensions…</div>
+                    <div class="mo-version-actions">
+                        <button type="button" class="mo-check-all menu_button menu_button_icon"><span class="fa-solid fa-rotate"></span><span> Check All</span></button>
+                        <button type="button" class="mo-update-all menu_button menu_button_icon"><span class="fa-solid fa-cloud-arrow-down"></span><span> Update All</span></button>
+                    </div>
+                </div>
+                <div class="mo-version-list"></div>
+            </div>`);
+        const manager = {
+            wrapper,
+            items: [],
+            controls: [],
+            busy: false,
+            updateSummary() {
+                const gitItems = this.items.filter(item => item.version?.currentCommitHash);
+                const pinned = gitItems.filter(isPinned).length;
+                wrapper.find('.mo-version-summary').text(
+                    `${this.items.length} extensions · Git ${gitItems.length}${pinned ? ` · Pin ${pinned}` : ''}`,
+                );
+            },
+            setBusy(busy) {
+                this.busy = busy;
+                wrapper.find('.mo-check-all, .mo-update-all').prop('disabled', busy);
+            },
+        };
+
+        const discover = async () => {
+            manager.setBusy(true);
+            const list = wrapper.find('.mo-version-list').empty().append('<div class="mo-version-loading"><span class="fa-solid fa-spinner fa-spin"></span> กำลังค้นหา extensions…</div>');
+            try {
+                const discovered = await apiRequest('/api/extensions/discover');
+                manager.items = (Array.isArray(discovered) ? discovered : [])
+                    .map(normalizeExtensionEntry)
+                    .filter(Boolean)
+                    .sort((a, b) => extensionDisplayName(a).localeCompare(extensionDisplayName(b), undefined, { sensitivity: 'base' }));
+                list.empty();
+                if (!manager.items.length) {
+                    list.append('<div class="mo-version-empty">ไม่พบ third-party extension ที่ติดตั้งอยู่</div>');
+                    manager.updateSummary();
+                    manager.setBusy(false);
+                    return;
+                }
+                manager.controls = manager.items.map(item => {
+                    const control = makeVersionCard(item, manager);
+                    list.append(control.card);
+                    return control;
+                });
+                await mapLimit(manager.controls, 3, control => control.refresh());
+                manager.updateSummary();
+            } catch (error) {
+                list.empty().append($('<div class="mo-version-empty mo-card-error"></div>').text(error.message || String(error)));
+                wrapper.find('.mo-version-summary').text('โหลดรายการไม่สำเร็จ');
+            } finally {
+                manager.setBusy(false);
+            }
+        };
+
+        wrapper.find('.mo-check-all').on('click', async () => {
+            if (manager.busy) return;
+            manager.setBusy(true);
+            await mapLimit(manager.controls, 3, control => control.refresh());
+            manager.updateSummary();
+            manager.setBusy(false);
+        });
+        wrapper.find('.mo-update-all').on('click', async () => {
+            if (manager.busy) return;
+            const targets = manager.controls.filter((control, index) => {
+                const item = manager.items[index];
+                return item.version?.currentCommitHash && !isPinned(item);
+            });
+            const skipped = manager.items.filter(item => item.version?.currentCommitHash && isPinned(item)).length;
+            if (!targets.length) {
+                notify('info', skipped ? 'ทุก extension ถูก Pin ไว้' : 'ไม่พบ Git extension ที่อัปเดตได้', 'Update All');
+                return;
+            }
+            if (!window.confirm(`อัปเดต ${targets.length} extensions ตาม branch ปัจจุบัน?${skipped ? `\nข้าม ${skipped} ตัวที่ Pin ไว้` : ''}`)) return;
+            manager.setBusy(true);
+            let succeeded = 0;
+            for (let i = 0; i < targets.length; i++) {
+                wrapper.find('.mo-version-summary').text(`กำลังอัปเดต ${i + 1}/${targets.length}…`);
+                if (await targets[i].update({ quiet: true })) succeeded++;
+            }
+            manager.updateSummary();
+            manager.setBusy(false);
+            const failed = targets.length - succeeded;
+            notify(failed ? 'warning' : 'success', `สำเร็จ ${succeeded}${failed ? ` · ไม่สำเร็จ ${failed}` : ''}${skipped ? ` · ข้าม Pin ${skipped}` : ''}`, 'Update All เสร็จแล้ว · กรุณา reload หน้า');
+        });
+
+        return { wrapper, discover };
+    }
+
+    async function openVersionManager() {
+        const ctx = Core.getContext();
+        const { wrapper, discover } = buildVersionManager();
+        let popupPromise;
+        try {
+            if (ctx?.callGenericPopup && ctx?.POPUP_TYPE) {
+                popupPromise = ctx.callGenericPopup(
+                    wrapper,
+                    ctx.POPUP_TYPE.TEXT,
+                    '',
+                    { wide: true, large: true, okButton: 'ปิด' },
+                );
+            } else {
+                const overlay = $('<div class="mo-overlay"></div>').append(wrapper);
+                $('body').append(overlay);
+                popupPromise = new Promise(resolve => overlay.on('click', event => {
+                    if (event.target === overlay[0]) {
+                        overlay.remove();
+                        resolve();
+                    }
+                }));
+            }
+            void discover();
+            await popupPromise;
+        } catch (_) { /* closed / cancelled */ }
+    }
 
     // ------------------------------------------------------------------
     // Item identity + metadata
@@ -571,16 +1001,24 @@
                     <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                 </div>
                 <div class="inline-drawer-content">
-                    <p class="mo-desc">จัดเรียง ซ่อน/แสดง และย้ายบล็อกตั้งค่าของแต่ละ extension ในหน้านี้ได้ตามใจ · คอม/มือถือจำแยกกัน</p>
-                    <button type="button" id="mo-open-editor" class="menu_button menu_button_icon">
-                        <span class="fa-solid fa-arrows-up-down-left-right"></span>
-                        <span>เปิดตัวจัดเรียงเมนู</span>
-                    </button>
+                    <p class="mo-desc">จัดเรียง ซ่อน/แสดง และจัดการ branch/update ของ third-party extensions · คอม/มือถือจำ layout แยกกัน</p>
+                    <div class="mo-entry-actions">
+                        <button type="button" id="mo-open-editor" class="menu_button menu_button_icon">
+                            <span class="fa-solid fa-arrows-up-down-left-right"></span>
+                            <span>Arrange Extensions</span>
+                        </button>
+                        <button type="button" id="mo-open-version-manager" class="menu_button menu_button_icon">
+                            <span class="fa-solid fa-code-branch"></span>
+                            <span>Version Manager</span>
+                        </button>
+                    </div>
                 </div>
             </div>`;
         container.appendChild(block);
         const btn = document.getElementById('mo-open-editor');
         if (btn) btn.addEventListener('click', openEditor);
+        const versionBtn = document.getElementById('mo-open-version-manager');
+        if (versionBtn) versionBtn.addEventListener('click', openVersionManager);
         return true;
     }
 
