@@ -607,21 +607,28 @@
             }
 
             const placed = new Set();
+            const nextIndex = [0, 0];
+
+            // วางรายการที่บันทึกของทั้งสองคอลัมน์ก่อน เพื่อไม่ให้รายการของ
+            // คอลัมน์ขวาที่เริ่มต้นอยู่ซ้ายถูกนับเป็น "รายการใหม่" ผิดฝั่ง
             COLS.forEach((c, i) => {
                 const col = cols[i];
-                let idx = 0;
                 for (const key of settings.layout[c.id]) {
                     const el = byKey.get(key);
                     if (el && !placed.has(key)) {
-                        placeAt(col, el, idx++);
+                        placeAt(col, el, nextIndex[i]++);
                         placed.add(key);
                     }
                 }
+            });
+
+            COLS.forEach((c, i) => {
+                const col = cols[i];
                 // item ใหม่: ต่อท้ายคอลัมน์เดิมตามลำดับปัจจุบัน
                 for (const ch of [...col.children]) {
                     const key = ch.getAttribute(KEY_ATTR);
                     if (!placed.has(key)) {
-                        placeAt(col, ch, idx++);
+                        placeAt(col, ch, nextIndex[i]++);
                         placed.add(key);
                     }
                 }
