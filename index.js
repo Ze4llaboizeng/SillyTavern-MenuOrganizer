@@ -554,7 +554,7 @@
     function getLabel(el) {
         const header = el.querySelector('.inline-drawer-header b, .inline-drawer-toggle b, h3, h4');
         const text = (header?.textContent || '').trim().replace(/\s+/g, ' ');
-        if (text) return text.slice(0, 48);
+        if (text) return text;
         if (el.id) {
             return el.id
                 .replace(/_container$/, '')
