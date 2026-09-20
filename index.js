@@ -27,9 +27,6 @@
         try { return window.matchMedia(MOBILE_MEDIA).matches ? 'mobile' : 'desktop'; }
         catch (_) { return (window.innerWidth || 9999) <= 768 ? 'mobile' : 'desktop'; }
     }
-    function profileLabel(p) {
-        return p === 'mobile' ? 'มือถือ (จอแคบ)' : 'คอมพิวเตอร์ (จอกว้าง)';
-    }
     function isPageVisible() {
         return document.visibilityState !== 'hidden';
     }
@@ -581,9 +578,9 @@
     // Apply layout (minimal DOM writes)
     // ------------------------------------------------------------------
     function placeAt(parent, node, idx) {
-        const ref = parent.children[idx] || null;
-        if (node.parentNode === parent && node.nextSibling === ref) return false;
+        let ref = parent.children[idx] || null;
         if (ref === node) return false;
+        if (node.parentNode === parent && [...parent.children].indexOf(node) < idx) ref = ref?.nextSibling || null;
         parent.insertBefore(node, ref);
         return true;
     }
@@ -613,7 +610,9 @@
             // คอลัมน์ขวาที่เริ่มต้นอยู่ซ้ายถูกนับเป็น "รายการใหม่" ผิดฝั่ง
             COLS.forEach((c, i) => {
                 const col = cols[i];
-                for (const key of settings.layout[c.id]) {
+                const order = [...settings.layout[c.id], ...defaultLayout[c.id].filter(key =>
+                    !COLS.some(column => settings.layout[column.id].includes(key)))];
+                for (const key of order) {
                     const el = byKey.get(key);
                     if (el && !placed.has(key)) {
                         placeAt(col, el, nextIndex[i]++);
@@ -639,11 +638,11 @@
                 if (hidden.has(key) && !isLockedFromHide(el)) {
                     if (el.dataset.moHidden !== '1') {
                         el.dataset.moHidden = '1';
-                        el.style.setProperty('display', 'none', 'important');
+                        el.classList.add('mo-panel-hidden');
                     }
                 } else if (el.dataset.moHidden === '1') {
                     delete el.dataset.moHidden;
-                    el.style.removeProperty('display');
+                    el.classList.remove('mo-panel-hidden');
                 }
             });
         } finally {
@@ -659,14 +658,11 @@
             applyQueued = false;
             if (!isPageVisible()) {
                 // หน้าซ่อน: เลื่อนไปทำตอนกลับมาโชว์
-                pendingApplyWhenVisible = true;
                 return;
             }
             applyLayout();
         });
     }
-
-    let pendingApplyWhenVisible = false;
 
     // ------------------------------------------------------------------
     // Observer — ทำงานเฉพาะเมื่อหน้ามองเห็น + คอลัมน์ยังอยู่ในเอกสาร
@@ -674,6 +670,7 @@
     let observers = [];
     let reapplyTimer = null;
     let editorOpen = false;
+    let refreshEditor = null;
 
     function shouldObserve() {
         return isPageVisible() && COLS.every(c => document.getElementById(c.id));
@@ -681,7 +678,6 @@
 
     function scheduleReapply() {
         if (!isPageVisible()) {
-            pendingApplyWhenVisible = true;
             return;
         }
         clearTimeout(reapplyTimer);
@@ -727,10 +723,8 @@
 
     function onVisibilityChange() {
         if (isPageVisible()) {
-            if (pendingApplyWhenVisible) {
-                pendingApplyWhenVisible = false;
-                queueApplyLayout();
-            }
+            // Changes made while disconnected must be reconciled on return.
+            queueApplyLayout();
             startObserver();
         } else {
             // แท็บ/แอปถูกซ่อน: ตัด observer ลด wake-up + เคลียร์ timer
@@ -753,7 +747,8 @@
             const now = currentProfile();
             if (now === lastProfile) return;
             lastProfile = now;
-            queueApplyLayout();
+            applyLayout();
+            refreshEditor?.();
         };
         try {
             mq = window.matchMedia(MOBILE_MEDIA);
@@ -762,14 +757,14 @@
             else if (mq.addListener) mq.addListener(onChange);
         } catch (_) {
             // fallback เบา: ใช้ matchMedia ไม่ได้ค่อย resize (debounced ผ่าน schedule)
-            window.addEventListener('resize', () => scheduleReapply(), { passive: true });
+            window.addEventListener('resize', onChange, { passive: true });
         }
     }
 
     // ------------------------------------------------------------------
     // Editor UI
     // ------------------------------------------------------------------
-    function makeRow(el, hiddenSet, persist) {
+    function makeRow(el, hiddenSet, persist, mobile) {
         const key = el.getAttribute(KEY_ATTR);
         const locked = isLockedFromHide(el);
         const isHidden = !locked && hiddenSet.has(key);
@@ -778,6 +773,11 @@
                 <div class="mo-handle fa-solid fa-grip-vertical" title="ลากเพื่อจัดเรียง / ย้ายคอลัมน์" aria-label="ลากจัดเรียง"></div>
                 <div class="mo-icon" aria-hidden="true"></div>
                 <div class="mo-label"></div>
+                <div class="mo-move-actions">
+                    <button type="button" class="mo-move mo-up" title="เลื่อนขึ้น" aria-label="เลื่อนขึ้น">↑</button>
+                    <button type="button" class="mo-move mo-down" title="เลื่อนลง" aria-label="เลื่อนลง">↓</button>
+                    ${mobile ? '' : '<button type="button" class="mo-move mo-across" title="ย้ายคอลัมน์" aria-label="ย้ายคอลัมน์">⇄</button>'}
+                </div>
                 <button type="button" class="mo-toggle fa-solid ${locked ? 'fa-lock' : (isHidden ? 'fa-eye-slash' : 'fa-eye')}"
                      title="${locked ? 'บล็อกนี้ซ่อนไม่ได้ (กันเปิดกลับไม่ได้)' : 'ซ่อน/แสดง'}"
                      aria-label="${locked ? 'ซ่อนไม่ได้' : 'ซ่อน/แสดงเมนูนี้'}"
@@ -786,7 +786,29 @@
         row.attr('data-key', key);
         if (locked) row.attr('data-locked', '1');
         row.find('.mo-icon').addClass(getIconClass(el));
-        row.find('.mo-label').text(getLabel(el));
+        const label = getLabel(el);
+        row.find('.mo-label').text(label).attr('title', label);
+        row.find('button').each(function () {
+            this.setAttribute('aria-label', `${this.getAttribute('aria-label')}: ${label}`);
+        });
+        row.find('.mo-move').on('click', function () {
+            const node = row[0];
+            if (this.classList.contains('mo-across')) {
+                const other = row.closest('.mo-columns').find('.mo-list').toArray()
+                    .find(list => list !== node.parentNode);
+                if (!other) return;
+                other.appendChild(node);
+            } else {
+                const up = this.classList.contains('mo-up');
+                let neighbor = up ? node.previousElementSibling : node.nextElementSibling;
+                while (neighbor?.hidden) neighbor = up ? neighbor.previousElementSibling : neighbor.nextElementSibling;
+                if (!neighbor) return;
+                node.parentNode.insertBefore(node, up ? neighbor : neighbor.nextElementSibling);
+            }
+            persist();
+            this.focus({ preventScroll: true });
+            node.scrollIntoView({ block: 'nearest' });
+        });
         if (!locked) {
             const toggle = () => {
                 const nowHidden = row.toggleClass('mo-row-hidden').hasClass('mo-row-hidden');
@@ -824,7 +846,7 @@
             colWrap.find('.mo-col-title').text(c.label);
             const list = $('<div class="mo-list mo-connected"></div>').attr('data-col', c.id);
             for (const el of c.elements) {
-                if (isRenderable(el)) list.append(makeRow(el, hiddenSet, persist));
+                if (isRenderable(el)) list.append(makeRow(el, hiddenSet, persist, mobile));
             }
             colWrap.append(list);
             columns.append(colWrap);
@@ -832,19 +854,20 @@
         });
 
         const wrapper = $('<div class="mo-editor"></div>');
+        wrapper.toggleClass('mo-touch-editor', mobile || !$.fn.sortable);
         const badge = $('<div class="mo-profile-badge"><span class="fa-solid"></span> <span class="mo-profile-text"></span></div>');
         badge.find('.fa-solid').addClass(mobile ? 'fa-mobile-screen-button' : 'fa-desktop');
         badge.find('.mo-profile-text').text(
             mobile
                 ? 'โปรไฟล์มือถือ · แยกจากคอมพิวเตอร์'
-                : 'กำลังตั้งค่าสำหรับ: ' + profileLabel(currentProfile()) + ' (คอมกับมือถือจำแยกกัน)',
+                : 'โปรไฟล์คอมพิวเตอร์ · แยกจากมือถือ',
         );
         wrapper.append(badge);
         wrapper.append(
             '<div class="mo-editor-hint">'
             + (mobile
-                ? 'ลาก <span class="fa-solid fa-grip-vertical"></span> เพื่อเรียงเมนูทั้งหมด · กดตาเพื่อซ่อน · บันทึกอัตโนมัติ'
-                : 'ลากด้วย <span class="fa-solid fa-grip-vertical"></span> เพื่อจัดเรียงหรือย้ายข้ามคอลัมน์ · กดตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ')
+                ? 'กด ↑ ↓ เพื่อเรียงเมนู · กดตาเพื่อซ่อน/แสดง · บันทึกอัตโนมัติ'
+                : 'กด ↑ ↓ เพื่อเรียง หรือ ⇄ เพื่อย้ายคอลัมน์ · ลากได้ด้วยที่จับ · บันทึกอัตโนมัติ')
             + '</div>',
         );
 
@@ -863,6 +886,7 @@
 
         const showAllBtn = $('<button type="button" class="menu_button menu_button_icon mo-show-all"><span class="fa-solid fa-eye"></span> แสดงทั้งหมด</button>');
         showAllBtn.on('click', () => {
+            settings.hidden = [];
             lists.forEach(list => {
                 list.find('.mo-row-hidden').removeClass('mo-row-hidden');
                 list.find('.mo-row:not(.mo-row-locked) .mo-toggle')
@@ -888,6 +912,11 @@
                 const row = rows.get(key);
                 if (row) lists[i].append(row);
             }));
+            for (const c of COLS) settings.layout[c.id] = [...defaultLayout[c.id]];
+            if (mobile) {
+                settings.layout[COLS[0].id] = COLS.flatMap(c => defaultLayout[c.id]);
+                settings.layout[COLS[1].id] = [];
+            }
             showAllBtn.trigger('click');
         });
 
@@ -901,8 +930,13 @@
     }
 
     function persistEditor(lists, settings) {
-        const hidden = [];
-        for (const c of COLS) settings.layout[c.id] = [];
+        const represented = new Set();
+        lists.forEach(list => list.find('.mo-row').each(function () {
+            represented.add(this.getAttribute('data-key'));
+        }));
+        const hidden = settings.hidden.filter(key => !represented.has(key));
+        // Keep preferences for extensions that have not loaded or have no content yet.
+        for (const c of COLS) settings.layout[c.id] = settings.layout[c.id].filter(key => !represented.has(key));
         lists.forEach(list => {
             const order = [];
             list.find('.mo-row').each(function () {
@@ -910,7 +944,7 @@
                 order.push(key);
                 if (this.classList.contains('mo-row-hidden')) hidden.push(key);
             });
-            settings.layout[list.attr('data-col')] = order;
+            settings.layout[list.attr('data-col')] = [...order, ...settings.layout[list.attr('data-col')]];
         });
         settings.hidden = hidden;
         Core.save();
@@ -927,27 +961,21 @@
     }
 
     async function openEditor() {
+        if (editorOpen) return;
         const ctx = Core.getContext();
-        const { wrapper, lists, persist } = buildEditor();
+        let { wrapper, lists, persist } = buildEditor();
         editorOpen = true;
 
-        // ลากข้ามคอลัมน์ jQuery UI ยิง update 2 ครั้ง -> debounce
-        let persistTimer = null;
         let cleaned = false;
-        const persistSoon = () => {
-            clearTimeout(persistTimer);
-            persistTimer = setTimeout(() => persist && persist(), 60);
-        };
         const cleanup = () => {
             if (cleaned) return;
             cleaned = true;
             editorOpen = false;
-            clearTimeout(persistTimer);
+            refreshEditor = null;
             destroySortables(lists);
         };
 
-        const mobile = currentProfile() === 'mobile';
-        // มือถือ: delay ก่อนเริ่มลาก กันชน scroll; คอม: ลากทันที
+        // Desktop dragging is optional; buttons work on touch and with a keyboard.
         const sortableOpts = {
             handle: '.mo-handle',
             connectWith: '.mo-connected',
@@ -955,18 +983,29 @@
             placeholder: 'mo-sortable-placeholder',
             forcePlaceholderSize: true,
             scroll: true,
-            scrollSensitivity: mobile ? 48 : 30,
-            scrollSpeed: mobile ? 12 : 10,
-            delay: mobile ? 160 : 0,
-            distance: mobile ? 0 : 3,
+            scrollSensitivity: 30,
+            scrollSpeed: 10,
+            distance: 3,
             helper: 'original',
-            update: persistSoon,
+            // stop fires once, after a cross-column drop has finished.
+            stop: () => persist?.(),
         };
 
-        setTimeout(() => {
-            if (cleaned || !$.fn.sortable || !lists.length) return;
-            lists.forEach(list => list.sortable(sortableOpts));
-        }, 40);
+        const initSortables = () => {
+            if (cleaned || currentProfile() === 'mobile' || !$.fn.sortable || !lists.length) return;
+            lists.forEach(list => list.sortable({ ...sortableOpts, items: '.mo-row:not([hidden])' }));
+        };
+        refreshEditor = () => {
+            destroySortables(lists);
+            const next = buildEditor();
+            const close = wrapper.find('.mo-close').detach();
+            wrapper.attr('class', next.wrapper.attr('class')).empty().append(next.wrapper.children());
+            wrapper.append(close);
+            lists = next.lists;
+            persist = next.persist;
+            initSortables();
+        };
+        setTimeout(initSortables, 40);
 
         try {
             if (ctx?.callGenericPopup && ctx?.POPUP_TYPE) {
@@ -977,19 +1016,34 @@
                     { wide: true, large: true, okButton: 'เสร็จสิ้น' },
                 );
             } else {
-                const overlay = $('<div class="mo-overlay"></div>').append(wrapper);
+                const overlay = $('<div class="mo-overlay" role="dialog" aria-modal="true" aria-label="Arrange Extensions"></div>').append(wrapper);
+                const close = $('<button type="button" class="menu_button mo-close">เสร็จสิ้น</button>');
+                wrapper.append(close);
                 $('body').append(overlay);
                 await new Promise(resolve => {
+                    const dismiss = () => {
+                        overlay.remove();
+                        resolve();
+                    };
+                    close.on('click', dismiss);
                     overlay.on('click', e => {
-                        if (e.target === overlay[0]) {
-                            overlay.remove();
-                            resolve();
-                        }
+                        if (e.target === overlay[0]) dismiss();
                     });
+                    overlay.on('keydown', e => {
+                        if (e.key === 'Escape') dismiss();
+                        if (e.key !== 'Tab') return;
+                        const buttons = overlay.find('input, button:not(:disabled)').filter(':visible').toArray();
+                        const first = buttons[0];
+                        const last = buttons[buttons.length - 1];
+                        if (e.shiftKey && e.target === first) { e.preventDefault(); last?.focus(); }
+                        else if (!e.shiftKey && e.target === last) { e.preventDefault(); first?.focus(); }
+                    });
+                    close[0].focus();
                 });
             }
         } catch (_) { /* closed / cancelled */ }
         cleanup();
+        document.getElementById('mo-open-editor')?.focus();
     }
 
     // ------------------------------------------------------------------
